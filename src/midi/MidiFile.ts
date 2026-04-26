@@ -63,6 +63,30 @@ export interface MidiOptions {
   showNoteLetters: number;
   /** Key signature (number of sharps; negative = flats). */
   key: number;
+  /** Display the piano keyboard. */
+  showPiano: boolean;
+  /** Display large or small note sizes. */
+  largeNoteSize: boolean;
+  /** Show lyrics under notes. */
+  showLyrics: boolean;
+  /** Shade color for right-hand notes (packed RGB). */
+  shade1Color: number;
+  /** Shade color for left-hand notes (packed RGB). */
+  shade2Color: number;
+  /** Use per-note colors. */
+  useColors: boolean;
+  /** Color accidental notes (sharps/flats) in red. */
+  colorAccidentals: boolean;
+  /** Enlarge graphics to full screen height. */
+  useFullHeight: boolean;
+  /** Number of count-in measures (beat clicks) before playback. */
+  countInMeasures: number;
+  /** Per-note-scale colors (12 entries). */
+  noteColors: number[];
+  /** Semitone shift for MIDI input. */
+  midiShift: number;
+  /** The last measure number in the song (0-based). */
+  lastMeasure: number;
 }
 
 export const NoteNameNone           = 0;
