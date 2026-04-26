@@ -41,7 +41,36 @@ export interface MidiOptions {
   volume: number[] | null;
   /** Octave shift per original track index (each unit = 12 semitones). */
   trackOctaveShift: number[] | null;
+  /** If true, show measure numbers above the first staff. */
+  showMeasures: boolean;
+  /** If true, show small beat-marker ticks above the staff. */
+  showBeatMarkers: boolean;
+  /** If true, show track number and instrument label above each staff. */
+  showTrackLabels: boolean;
+  /** Abbreviated instrument names per original track index (may be null). */
+  trackInstrumentNames: string[] | null;
+  /** Default time signature when none is specified in the MIDI file. */
+  defaultTime: TimeSignature;
+  /** If true, scroll vertically (one staff per row). */
+  scrollVert: boolean;
+  /** If true, loop playback between the given measure numbers. */
+  playMeasuresInLoop: boolean;
+  /** Start measure of the loop range (0-based). */
+  playMeasuresInLoopStart: number;
+  /** End measure of the loop range (0-based, inclusive). */
+  playMeasuresInLoopEnd: number;
+  /** How to display note letters (NoteNameNone, NoteNameLetter, etc.). */
+  showNoteLetters: number;
+  /** Key signature (number of sharps; negative = flats). */
+  key: number;
 }
+
+export const NoteNameNone           = 0;
+export const NoteNameLetter         = 1;
+export const NoteNameFixedDoReMi    = 2;
+export const NoteNameMovableDoReMi  = 3;
+export const NoteNameFixedNumber    = 4;
+export const NoteNameMovableNumber  = 5;
 
 // ---------------------------------------------------------------------------
 // PairInt helper (used by SplitTrack)
