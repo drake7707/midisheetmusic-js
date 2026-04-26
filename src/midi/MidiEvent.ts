@@ -44,7 +44,7 @@ export class MidiEvent {
     return m;
   }
 
-  compare(x: MidiEvent, y: MidiEvent): number {
+  static compare(x: MidiEvent, y: MidiEvent): number {
     return x.StartTime - y.StartTime;
   }
 }

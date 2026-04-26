@@ -52,10 +52,10 @@ export class MidiNote {
     return n;
   }
 
-  /** Comparator: sort by starttime, then by notenumber. */
-  compare(x: MidiNote, y: MidiNote): number {
-    if (x.starttime !== y.starttime) return x.starttime - y.starttime;
-    return x.notenumber - y.notenumber;
+  /** Comparator: sort by starttime, then by note number. */
+  static compare(x: MidiNote, y: MidiNote): number {
+    if (x.getStartTime() !== y.getStartTime()) return x.getStartTime() - y.getStartTime();
+    return x.getNumber() - y.getNumber();
   }
 
   toString(): string {

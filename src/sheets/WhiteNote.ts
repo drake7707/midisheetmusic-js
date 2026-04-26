@@ -71,7 +71,7 @@ export class WhiteNote {
   }
 
   /** Compare two notes: < 0 if x < y, 0 if equal, > 0 if x > y */
-  compare(x: WhiteNote, y: WhiteNote): number {
+  static compare(x: WhiteNote, y: WhiteNote): number {
     return x.Dist(y);
   }
 
