@@ -1,6 +1,5 @@
 import type { MusicSymbol } from './MusicSymbol';
-import type { ISheetMusic } from './ISheetMusic';
-import { MidiOptions } from '@/midi/MidiFile';
+import type { MidiOptions } from '@/midi/MidiFile';
 import { KeySignature } from '@/midi/KeySignature';
 import { TimeSignature } from '@/midi/TimeSignature';
 import { AccidSymbol } from './AccidSymbol';

@@ -4,7 +4,7 @@ import { Clef } from './Clef';
 import { WhiteNote } from './WhiteNote';
 import {
   NoteHeight,
-  NoteWidth,
+
   LineSpace,
   LineWidth,
 } from './SheetMusicConstants';

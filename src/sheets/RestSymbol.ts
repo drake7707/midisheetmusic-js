@@ -91,7 +91,6 @@ export class RestSymbol implements MusicSymbol {
   private DrawEighth(ctx: CanvasRenderingContext2D, ytop: number): void {
     const y = ytop + NoteHeight - 1;
     const cx = (LineSpace - 1) / 2;
-    const cy = (LineSpace - 1) / 2;
     const rx = (LineSpace - 1) / 2;
     const ry = (LineSpace - 1) / 2;
 

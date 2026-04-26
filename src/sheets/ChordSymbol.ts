@@ -200,20 +200,6 @@ export class ChordSymbol implements MusicSymbol {
   isTiedToPrev(): boolean { return this.tiedToPrev; }
   getTiedFromPrevNotes(): WhiteNote[] | null { return this.tiedFromPrevNotes; }
 
-  private getAccidWidth(): number {
-    if (this.accidsymbols.length === 0) return 0;
-    let xpos = 0;
-    let prev: AccidSymbol | null = null;
-    for (const symbol of this.accidsymbols) {
-      if (prev !== null && symbol.getNote().Dist(prev.getNote()) < 6) {
-        xpos += symbol.getWidth();
-      }
-      prev = symbol;
-    }
-    if (prev) xpos += prev.getWidth();
-    return xpos;
-  }
-
   getNoteXRight(): number {
     return this.width - (2 * NoteHeight + Math.floor(NoteHeight * 3 / 4))
       + Math.floor(LineSpace / 4) + NoteWidth;
