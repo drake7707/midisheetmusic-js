@@ -21,15 +21,11 @@ export const PlayerState = {
 
 export type PlayerStateValue = typeof PlayerState[keyof typeof PlayerState];
 
-export type SheetUpdateListener = () => void;
-
 export class MidiPlayer {
   private midifile:    MidiFile   | null = null;
   private options:     MidiOptions | null = null;
   private sheet:       SheetMusic  | null = null;
   private piano:       Piano       | null = null;
-  // canvas refs for piano drawing (used by Vue component)
-  private pianoCanvas: CanvasRenderingContext2D | null = null;
 
   playstate: PlayerStateValue = PlayerState.Stopped;
 
@@ -53,13 +49,8 @@ export class MidiPlayer {
   private countInStartTime       = 0;
   private audioCtx: AudioContext | null = null;
 
-  private sheetUpdateListener: SheetUpdateListener | null = null;
-
-  setSheetUpdateListener(fn: SheetUpdateListener): void { this.sheetUpdateListener = fn; }
-
-  SetPiano(p: Piano, pianoCtx: CanvasRenderingContext2D): void {
+  SetPiano(p: Piano): void {
     this.piano = p;
-    this.pianoCanvas = pianoCtx;
   }
 
   SetMidiFile(file: MidiFile, opt: MidiOptions, s: SheetMusic): void {
@@ -252,7 +243,7 @@ export class MidiPlayer {
     if (!this.sheet) return;
     const ctx = this._sheetCtx();
     if (!ctx) return;
-    this.sheet.ShadeNotes(ctx, this.currentPulseTime, this.prevPulseTime, DontScroll);
+    this.sheet.ShadeNotes(ctx, this.currentPulseTime, this.prevPulseTime);
   }
 
   // ---- Internal ----
@@ -361,7 +352,7 @@ export class MidiPlayer {
 
     // Build the modified MIDI bytes
     const bytes = this.midifile.ChangeSound(this.options);
-    const blob  = new Blob([bytes], { type: 'audio/midi' });
+    const blob  = new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/midi' });
     const url   = URL.createObjectURL(blob);
 
     if (this.audio) {
