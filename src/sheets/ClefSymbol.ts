@@ -69,6 +69,19 @@ export class ClefSymbol implements MusicSymbol {
 
     ctx.font = `${fontSize}px serif`;
     ctx.textBaseline = 'bottom';
+
+    // Measure the actual rendered glyph size and scale down if the font (e.g. an
+    // emoji/symbol fallback) renders it larger than the space reserved for it.
+    const metrics = ctx.measureText(symbol);
+    const glyphH = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    // Maximum allowed height: above-staff + staff + below-staff
+    const maxH = this.getAboveStaff() + StaffHeight + this.getBelowStaff();
+    if (glyphH > 0 && glyphH > maxH) {
+      const scale = maxH / glyphH;
+      ctx.scale(scale, scale);
+      y = y / scale;
+    }
+
     ctx.fillText(symbol, 0, y);
 
     ctx.restore();

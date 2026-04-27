@@ -83,8 +83,8 @@ export class MidiPlayer {
   private sfPlayers:   Map<number, SFPlayer> = new Map();
   /** audioCtx.currentTime reference for the start of scheduled playback */
   private sfAudioStart: number = 0;
-  /** Whether a soundfont instrument load is in progress */
-  private sfLoading = false;
+  /** Chain of instrument-loading promises – always resolves, never rejects */
+  private sfLoadingPromise: Promise<void> = Promise.resolve();
 
   private startTime:       number = 0;       // performance.now() when playback started
   private startPulseTime:  number = 0;
@@ -290,6 +290,7 @@ export class MidiPlayer {
       this.sfAudioCtx = null;
     }
     this.sfPlayers.clear();
+    this.sfLoadingPromise = Promise.resolve();
     if (this.audioCtx) {
       this.audioCtx.close();
       this.audioCtx = null;
@@ -311,7 +312,7 @@ export class MidiPlayer {
     return this.options.mute.filter(m => !m).length;
   }
 
-  private doPlay(): void {
+  private async doPlay(): Promise<void> {
     if (!this.midifile || !this.options) return;
     const opts = this.options;
     const ts = opts.time ?? this.midifile.getTime();
@@ -349,8 +350,32 @@ export class MidiPlayer {
       this.prevPulseTime    = shifttime - countInPulses - this.midifile.getTime().getQuarter();
     }
 
+    // Compute tempo / pulsesPerMsec and ensure AudioContext exists.
+    // Also enqueues instrument loading onto sfLoadingPromise.
     this.createMidiAudio();
+
+    // Start visual timer and shading immediately so the UI responds right away.
     this.playstate = PlayerState.Playing;
+    this.startTime = performance.now();
+    this.clearTimer();
+    this.timerHandle = window.setInterval(() => this.timerCallback(), 100);
+    this._shadeNotes(this.currentPulseTime, this.prevPulseTime, GradualScroll);
+    this._shadeNotePiano(this.currentPulseTime, this.prevPulseTime);
+
+    // Wait for all required soundfont instruments to finish loading before
+    // scheduling any Web Audio API notes.  This ensures the first play works.
+    await this.sfLoadingPromise;
+
+    // The user may have paused/stopped while instruments were loading, or
+    // SetMidiFile may have been called with new options (which resets playstate).
+    // Guard against both by checking playstate and the options reference.
+    if (this.playstate !== PlayerState.Playing || this.options !== opts) return;
+
+    // Re-anchor startPulseTime to the current visual position so that audio
+    // starts in sync with the sheet music regardless of how long loading took.
+    this.startPulseTime = this.currentPulseTime;
+    opts.pauseTime = Math.floor(this.currentPulseTime - shifttime);
+    this.startTime = performance.now();
 
     if (opts.countInMeasures > 0 && opts.pauseTime === 0 && !this.doPlayFromLoopEnd) {
       this.countInBeatsPerMeasure = ts.getNumerator();
@@ -362,12 +387,6 @@ export class MidiPlayer {
     } else {
       this.playAudio();
     }
-
-    this.startTime = performance.now();
-    this.clearTimer();
-    this.timerHandle = window.setInterval(() => this.timerCallback(), 100);
-    this._shadeNotes(this.currentPulseTime, this.prevPulseTime, GradualScroll);
-    this._shadeNotePiano(this.currentPulseTime, this.prevPulseTime);
   }
 
   private scheduleCountInBeat(): void {
@@ -416,18 +435,21 @@ export class MidiPlayer {
       this.sfAudioCtx.resume().catch(() => {});
     }
 
-    // Kick off async instrument loading.  Instruments already in sfPlayers are used
-    // immediately; any not yet loaded will be fetched and the notes for that
-    // instrument will be heard once the load completes.
+    // Collect the program numbers required by non-muted tracks.
     const tracks = this.midifile.ChangeMidiNotes(this.options);
     const progNums = new Set<number>();
     for (let i = 0; i < tracks.length; i++) {
       if (!this.options.mute[i]) progNums.add(this.options.instruments[i] ?? 0);
     }
-    if (!this.sfLoading) {
-      this.sfLoading = true;
-      this.loadSoundfontInstruments(progNums).finally(() => { this.sfLoading = false; });
-    }
+
+    // Chain instrument loading onto sfLoadingPromise so that doPlay() can
+    // await the entire chain before scheduling Web Audio API notes.
+    // Using a chain (rather than a flag) guarantees that a new instrument
+    // selected after a previous load has already started will still be loaded
+    // before playback begins.
+    this.sfLoadingPromise = this.sfLoadingPromise.then(() =>
+      this.loadSoundfontInstruments(progNums)
+    );
   }
 
   /** Async: load any soundfont instruments not yet in sfPlayers. */
