@@ -161,10 +161,6 @@ function hasMidi():   boolean { return midiFile.value !== null; }
     <footer v-if="options?.showPiano && piano" class="piano-footer">
       <PianoKeyboard ref="pianoViewRef" :piano="piano" />
     </footer>
-    <!-- Invisible piano canvas to satisfy MidiPlayer even when hidden -->
-    <div v-else style="display:none">
-      <PianoKeyboard ref="pianoViewRef" :piano="piano" />
-    </div>
   </div>
 </template>
 
