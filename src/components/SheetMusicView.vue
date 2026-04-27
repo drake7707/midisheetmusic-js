@@ -23,11 +23,11 @@ function drawSheet(): void {
   s.Draw(ctx);
 }
 
-function scrollTo(_x: number, y: number, immediate: boolean): void {
+function scrollTo(_x: number, y: number, _immediate: boolean): void {
   const el = containerEl.value;
   if (!el) return;
   const targetTop = Math.max(0, y - el.clientHeight / 3);
-  el.scrollTo({ top: targetTop, behavior: immediate ? 'instant' : 'smooth' });
+  el.scrollTo({ top: targetTop, behavior: 'instant' });
 }
 
 watch(() => props.sheet, drawSheet);

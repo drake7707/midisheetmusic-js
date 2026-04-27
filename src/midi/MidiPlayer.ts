@@ -1,7 +1,7 @@
 /**
  * MidiPlayer.ts — TypeScript port of MidiPlayer.java
- * Plays MIDI files using the Web Audio API (via a converted MIDI Blob → HTMLAudioElement).
- * Handles play/pause/stop/rewind/fastforward, note shading, and speed control.
+ * Plays MIDI files using Tone.js for audio output and handles play/pause/stop/
+ * rewind/fastforward, note shading, and speed control.
  */
 
 import { MidiFile } from '@/midi/MidiFile';
@@ -9,6 +9,12 @@ import type { MidiOptions } from '@/midi/MidiFile';
 import type { SheetMusic } from '@/midi/SheetMusic';
 import type { Piano } from '@/midi/Piano';
 import { ImmediateScroll, GradualScroll, DontScroll } from '@/midi/SheetMusic';
+import { getTransport, PolySynth, Synth, Part, start as toneStart } from 'tone';
+
+/** MIDI note number → frequency in Hz (standard formula) */
+function midiToFreq(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
 
 export const PlayerState = {
   Stopped:   1,
@@ -29,7 +35,8 @@ export class MidiPlayer {
 
   playstate: PlayerStateValue = PlayerState.Stopped;
 
-  private audio:           HTMLAudioElement | null = null;
+  private synths: PolySynth[] = [];
+  private tonePart: Part | null = null;
   private startTime:       number = 0;       // performance.now() when audio started
   private startPulseTime:  number = 0;
   private currentPulseTime: number = 0;
@@ -57,6 +64,7 @@ export class MidiPlayer {
     if (file === this.midifile && this.midifile !== null && this.playstate === PlayerState.Paused) {
       this.options = opt;
       this.sheet = s;
+      if (this._redrawFn) this._redrawFn();
       this.sheet.ShadeNotes(this._sheetCtx()!, this.currentPulseTime, -1);
       this.clearTimer();
       this.reshadeHandle = window.setTimeout(() => this.reShade(), 500);
@@ -227,11 +235,8 @@ export class MidiPlayer {
   cleanup(): void {
     this.clearTimer();
     this.clearPendingPlay();
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.src = '';
-      this.audio = null;
-    }
+    getTransport().stop();
+    this.disposeToneAudio();
     if (this.audioCtx) {
       this.audioCtx.close();
       this.audioCtx = null;
@@ -350,30 +355,77 @@ export class MidiPlayer {
     this.options.tempo = Math.round(1.0 / inverseTmpoScaled);
     this.pulsesPerMsec = this.midifile.getTime().getQuarter() * (1000.0 / this.options.tempo);
 
-    // Build the modified MIDI bytes
-    const bytes = this.midifile.ChangeSound(this.options);
-    const blob  = new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/midi' });
-    const url   = URL.createObjectURL(blob);
+    // Dispose any previous Tone.js resources
+    this.disposeToneAudio();
 
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.src = '';
+    // Get notes using the same data as the visual display
+    const tracks = this.midifile.ChangeMidiNotes(this.options);
+    const pulsesPerSec = this.pulsesPerMsec * 1000;
+
+    // One PolySynth per track, capped for typical piano pieces to reduce CPU usage.
+    // Most MIDI files relevant to this app are piano arrangements with ≤ 2 voices.
+    const MAX_POLYPHONY_SYNTHS = 2;
+    const numSynths = Math.max(1, Math.min(tracks.length, MAX_POLYPHONY_SYNTHS));
+    for (let i = 0; i < numSynths; i++) {
+      const synth = new PolySynth(Synth, {
+        oscillator: { type: 'triangle' as const },
+        envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 },
+      });
+      synth.toDestination();
+      this.synths.push(synth);
     }
-    this.audio = new Audio(url);
-    this.audio.onended = () => {
-      if (this.playstate === PlayerState.Playing) this.doStop();
-    };
+
+    // Build note events starting from startPulseTime
+    type NoteEvent = { time: number; note: number; duration: number; track: number };
+    const events: NoteEvent[] = [];
+    for (let trackIdx = 0; trackIdx < tracks.length; trackIdx++) {
+      if (this.options.mute[trackIdx]) continue;
+      const notes = tracks[trackIdx].getNotes();
+      for (const note of notes) {
+        const noteStart = note.getStartTime();
+        if (noteStart < this.startPulseTime) continue;
+        const startSec = (noteStart - this.startPulseTime) / pulsesPerSec;
+        const durSec = Math.max(0.05, note.getDuration() / pulsesPerSec);
+        events.push({ time: startSec, note: note.getNumber(), duration: durSec, track: trackIdx });
+      }
+    }
+
+    // Schedule all notes via a Tone.Part
+    if (events.length > 0) {
+      const synthsRef = this.synths;
+      this.tonePart = new Part<NoteEvent>((time, value) => {
+        const synthIdx = Math.min(value.track, synthsRef.length - 1);
+        synthsRef[synthIdx].triggerAttackRelease(midiToFreq(value.note), value.duration, time, 0.7);
+      }, events);
+      this.tonePart.start(0);
+    }
+
+    // Reset transport so it starts from 0 on playAudio()
+    getTransport().stop();
+    getTransport().position = 0;
+  }
+
+  private disposeToneAudio(): void {
+    if (this.tonePart) {
+      try { this.tonePart.stop(0); this.tonePart.dispose(); } catch { /* ignore */ }
+      this.tonePart = null;
+    }
+    for (const s of this.synths) {
+      try { s.releaseAll(); s.dispose(); } catch { /* ignore */ }
+    }
+    this.synths = [];
   }
 
   private playAudio(): void {
-    if (this.audio) this.audio.play().catch(() => {});
+    toneStart().catch(() => {});
+    getTransport().start();
     this.startTime = performance.now();
   }
 
   private stopAudio(): void {
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.currentTime = 0;
+    getTransport().pause();
+    for (const s of this.synths) {
+      try { s.releaseAll(); } catch { /* ignore */ }
     }
   }
 
@@ -430,7 +482,8 @@ export class MidiPlayer {
     this.clearTimer();
     this.removeShading();
     this.scrollToStart();
-    this.stopAudio();
+    getTransport().stop();
+    this.disposeToneAudio();
   }
 
   private removeShading(): void {
@@ -508,8 +561,8 @@ export class MidiPlayer {
     if (!this.sheet) return;
     const ctx = this._sheetCtx();
     if (!ctx) return;
-    // Redraw base sheet
-    if (this._redrawFn) this._redrawFn();
+    // ShadeNotes handles incremental canvas updates without a full redraw.
+    // _redrawFn is only called explicitly when the sheet itself changes (e.g. in SetMidiFile).
     const { xShade, yShade } = this.sheet.ShadeNotes(ctx, currentPulse, prevPulse);
     if (currentPulse >= 0 && this._scrollFn) {
       this._scrollFn(xShade, yShade, scrollType === ImmediateScroll);

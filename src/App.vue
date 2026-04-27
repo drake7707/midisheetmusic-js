@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, nextTick } from 'vue';
+import { ref, shallowRef, nextTick, computed } from 'vue';
 import { MidiFile, InstrumentAbbreviations } from '@/midi/MidiFile';
 import type { MidiOptions } from '@/midi/MidiFile';
 import { SheetMusic, createDefaultOptions } from '@/midi/SheetMusic';
@@ -8,6 +8,8 @@ import { MidiPlayer, PlayerState } from '@/midi/MidiPlayer';
 import type { PlayerStateValue } from '@/midi/MidiPlayer';
 import SheetMusicView from '@/components/SheetMusicView.vue';
 import PianoKeyboard from '@/components/PianoKeyboard.vue';
+import SettingsDrawer from '@/components/SettingsDrawer.vue';
+import SettingsPage   from '@/components/SettingsPage.vue';
 
 const player = new MidiPlayer();
 
@@ -19,6 +21,8 @@ const fileName    = ref('');
 const errorMsg    = ref('');
 const playState   = ref<PlayerStateValue>(PlayerState.Stopped);
 const speedPct    = ref(100);
+const showDrawer      = ref(false);
+const showFullSettings = ref(false);
 
 const sheetViewRef = ref<InstanceType<typeof SheetMusicView>  | null>(null);
 const pianoViewRef = ref<InstanceType<typeof PianoKeyboard>   | null>(null);
@@ -91,6 +95,61 @@ function setupPlayer(midi: MidiFile, opts: MidiOptions, s: SheetMusic, p: Piano)
   if (pianoCtx) p.Draw(pianoCtx);
 }
 
+// ---- rebuild sheet after option changes ----
+async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
+  if (!midiFile.value) return;
+  const midi = midiFile.value;
+  const opts = newOpts;
+
+  const wasPlaying = player.isPlaying();
+  if (wasPlaying) player.Pause();
+
+  const s = new SheetMusic(midi, opts);
+  const p = new Piano();
+  p.init(window.innerWidth);
+  p.SetMidiFile(midi, opts);
+  p.SetShadeColors(opts.shade1Color, opts.shade2Color);
+
+  options.value = opts;
+  sheet.value   = s;
+  piano.value   = p;
+
+  await nextTick();
+  setupPlayer(midi, opts, s, p);
+}
+
+/** Microseconds per minute — used to convert between tempo (µs/beat) and BPM. */
+const MICROS_PER_MINUTE = 60_000_000;
+/** Default BPM shown before a file is loaded. */
+const DEFAULT_BPM = 120;
+
+// ---- BPM helpers ----
+const bpm = computed(() => options.value ? Math.round(MICROS_PER_MINUTE / options.value.tempo) : DEFAULT_BPM);
+
+function onBpmChange(evt: Event) {
+  if (!options.value) return;
+  const v = parseInt((evt.target as HTMLInputElement).value, 10);
+  if (isNaN(v) || v < 10 || v > 300) return;
+  const newOpts: MidiOptions = { ...options.value, tempo: Math.round(MICROS_PER_MINUTE / v) };
+  rebuildSheet(newOpts);
+}
+
+// ---- twoStaffs toggle ----
+function toggleTwoStaffs() {
+  if (!options.value) return;
+  const newOpts: MidiOptions = { ...options.value, twoStaffs: !options.value.twoStaffs };
+  rebuildSheet(newOpts);
+}
+
+// ---- settings apply (from drawer or full page) ----
+function onSettingsApply(newOpts: MidiOptions, newSpeed: number) {
+  showDrawer.value       = false;
+  showFullSettings.value = false;
+  speedPct.value = newSpeed;
+  player.setSpeedPercent(newSpeed);
+  rebuildSheet(newOpts);
+}
+
 // ---- playback controls ----
 function play()        { player.Play();       playState.value = player.getPlayState(); }
 function pause()       { player.Pause();      playState.value = player.getPlayState(); }
@@ -137,6 +196,25 @@ function hasMidi():   boolean { return midiFile.value !== null; }
       </div>
 
       <div class="toolbar-right" v-if="hasMidi()">
+        <!-- BPM display / edit -->
+        <label class="bpm-label" title="Beats per minute">
+          BPM
+          <input
+            type="number" min="10" max="300" step="1"
+            :value="bpm"
+            @change="onBpmChange"
+            class="bpm-input"
+          />
+        </label>
+
+        <!-- Treble / Bass toggle -->
+        <button
+          class="btn-control"
+          :class="{ active: options?.twoStaffs }"
+          title="Toggle two-staff (treble + bass) layout"
+          @click="toggleTwoStaffs"
+        >🎹</button>
+
         <label class="speed-label">
           Speed: {{ speedPct }}%
           <input
@@ -146,6 +224,9 @@ function hasMidi():   boolean { return midiFile.value !== null; }
             class="speed-slider"
           />
         </label>
+
+        <!-- Settings -->
+        <button class="btn-icon" title="Settings" @click="showDrawer = !showDrawer">⚙️</button>
       </div>
     </header>
 
@@ -161,6 +242,29 @@ function hasMidi():   boolean { return midiFile.value !== null; }
     <footer v-if="options?.showPiano && piano" class="piano-footer">
       <PianoKeyboard ref="pianoViewRef" :piano="piano" />
     </footer>
+
+    <!-- ---- Settings drawer (quick access popup) ---- -->
+    <SettingsDrawer
+      v-if="options"
+      :visible="showDrawer"
+      :options="options"
+      :tracks="midiFile?.getTracks() ?? []"
+      :speedPct="speedPct"
+      @close="showDrawer = false"
+      @openFullSettings="showDrawer = false; showFullSettings = true"
+      @apply="onSettingsApply"
+    />
+
+    <!-- ---- Full settings page ---- -->
+    <SettingsPage
+      v-if="options"
+      :visible="showFullSettings"
+      :options="options"
+      :tracks="midiFile?.getTracks() ?? []"
+      :speedPct="speedPct"
+      @close="showFullSettings = false"
+      @apply="onSettingsApply"
+    />
   </div>
 </template>
 
@@ -185,7 +289,7 @@ function hasMidi():   boolean { return midiFile.value !== null; }
 }
 .toolbar-left  { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0; }
 .toolbar-center { display: flex; align-items: center; gap: 0.4rem; }
-.toolbar-right  { display: flex; align-items: center; gap: 0.5rem; }
+.toolbar-right  { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
 .filename {
   font-size: 0.85rem;
@@ -211,6 +315,29 @@ function hasMidi():   boolean { return midiFile.value !== null; }
 .btn-control:hover { background: #666; }
 .btn-play { background: #1a6e1a; }
 .btn-play:hover { background: #28a228; }
+.btn-control.active { background: #1a4e8a; }
+.btn-control.active:hover { background: #2066b8; }
+
+.bpm-label {
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.bpm-input {
+  width: 58px;
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 3px;
+  color: #eee;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.3rem;
+  text-align: center;
+}
+/* Remove number input spinners for cleaner look */
+.bpm-input::-webkit-outer-spin-button,
+.bpm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.bpm-input[type=number] { -moz-appearance: textfield; }
 
 .speed-label {
   font-size: 0.8rem;
