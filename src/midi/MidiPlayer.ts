@@ -9,7 +9,12 @@ import type { MidiOptions } from '@/midi/MidiFile';
 import type { SheetMusic } from '@/midi/SheetMusic';
 import type { Piano } from '@/midi/Piano';
 import { ImmediateScroll, GradualScroll, DontScroll } from '@/midi/SheetMusic';
-import { getTransport, PolySynth, Synth, Part, mtof, start as toneStart } from 'tone';
+import { getTransport, PolySynth, Synth, Part, start as toneStart } from 'tone';
+
+/** MIDI note number → frequency in Hz (standard formula) */
+function midiToFreq(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
 
 export const PlayerState = {
   Stopped:   1,
@@ -357,8 +362,10 @@ export class MidiPlayer {
     const tracks = this.midifile.ChangeMidiNotes(this.options);
     const pulsesPerSec = this.pulsesPerMsec * 1000;
 
-    // Create one synth per track, capped at 2 for typical piano files
-    const numSynths = Math.max(1, Math.min(tracks.length, 2));
+    // One PolySynth per track, capped for typical piano pieces to reduce CPU usage.
+    // Most MIDI files relevant to this app are piano arrangements with ≤ 2 voices.
+    const MAX_POLYPHONY_SYNTHS = 2;
+    const numSynths = Math.max(1, Math.min(tracks.length, MAX_POLYPHONY_SYNTHS));
     for (let i = 0; i < numSynths; i++) {
       const synth = new PolySynth(Synth, {
         oscillator: { type: 'triangle' as const },
@@ -388,7 +395,7 @@ export class MidiPlayer {
       const synthsRef = this.synths;
       this.tonePart = new Part<NoteEvent>((time, value) => {
         const synthIdx = Math.min(value.track, synthsRef.length - 1);
-        synthsRef[synthIdx].triggerAttackRelease(mtof(value.note), value.duration, time, 0.7);
+        synthsRef[synthIdx].triggerAttackRelease(midiToFreq(value.note), value.duration, time, 0.7);
       }, events);
       this.tonePart.start(0);
     }

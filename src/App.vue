@@ -8,7 +8,8 @@ import { MidiPlayer, PlayerState } from '@/midi/MidiPlayer';
 import type { PlayerStateValue } from '@/midi/MidiPlayer';
 import SheetMusicView from '@/components/SheetMusicView.vue';
 import PianoKeyboard from '@/components/PianoKeyboard.vue';
-import SettingsPanel from '@/components/SettingsPanel.vue';
+import SettingsDrawer from '@/components/SettingsDrawer.vue';
+import SettingsPage   from '@/components/SettingsPage.vue';
 
 const player = new MidiPlayer();
 
@@ -20,7 +21,8 @@ const fileName    = ref('');
 const errorMsg    = ref('');
 const playState   = ref<PlayerStateValue>(PlayerState.Stopped);
 const speedPct    = ref(100);
-const showSettings = ref(false);
+const showDrawer      = ref(false);
+const showFullSettings = ref(false);
 
 const sheetViewRef = ref<InstanceType<typeof SheetMusicView>  | null>(null);
 const pianoViewRef = ref<InstanceType<typeof PianoKeyboard>   | null>(null);
@@ -116,14 +118,19 @@ async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
   setupPlayer(midi, opts, s, p);
 }
 
+/** Microseconds per minute — used to convert between tempo (µs/beat) and BPM. */
+const MICROS_PER_MINUTE = 60_000_000;
+/** Default BPM shown before a file is loaded. */
+const DEFAULT_BPM = 120;
+
 // ---- BPM helpers ----
-const bpm = computed(() => options.value ? Math.round(60_000_000 / options.value.tempo) : 120);
+const bpm = computed(() => options.value ? Math.round(MICROS_PER_MINUTE / options.value.tempo) : DEFAULT_BPM);
 
 function onBpmChange(evt: Event) {
   if (!options.value) return;
   const v = parseInt((evt.target as HTMLInputElement).value, 10);
   if (isNaN(v) || v < 10 || v > 300) return;
-  const newOpts: MidiOptions = { ...options.value, tempo: Math.round(60_000_000 / v) };
+  const newOpts: MidiOptions = { ...options.value, tempo: Math.round(MICROS_PER_MINUTE / v) };
   rebuildSheet(newOpts);
 }
 
@@ -134,9 +141,12 @@ function toggleTwoStaffs() {
   rebuildSheet(newOpts);
 }
 
-// ---- settings apply ----
-function onSettingsApply(newOpts: MidiOptions) {
-  showSettings.value = false;
+// ---- settings apply (from drawer or full page) ----
+function onSettingsApply(newOpts: MidiOptions, newSpeed: number) {
+  showDrawer.value       = false;
+  showFullSettings.value = false;
+  speedPct.value = newSpeed;
+  player.setSpeedPercent(newSpeed);
   rebuildSheet(newOpts);
 }
 
@@ -216,7 +226,7 @@ function hasMidi():   boolean { return midiFile.value !== null; }
         </label>
 
         <!-- Settings -->
-        <button class="btn-icon" title="Settings" @click="showSettings = !showSettings">⚙️</button>
+        <button class="btn-icon" title="Settings" @click="showDrawer = !showDrawer">⚙️</button>
       </div>
     </header>
 
@@ -233,13 +243,26 @@ function hasMidi():   boolean { return midiFile.value !== null; }
       <PianoKeyboard ref="pianoViewRef" :piano="piano" />
     </footer>
 
-    <!-- ---- Settings panel ---- -->
-    <SettingsPanel
+    <!-- ---- Settings drawer (quick access popup) ---- -->
+    <SettingsDrawer
       v-if="options"
-      :visible="showSettings"
+      :visible="showDrawer"
       :options="options"
       :tracks="midiFile?.getTracks() ?? []"
-      @close="showSettings = false"
+      :speedPct="speedPct"
+      @close="showDrawer = false"
+      @openFullSettings="showDrawer = false; showFullSettings = true"
+      @apply="onSettingsApply"
+    />
+
+    <!-- ---- Full settings page ---- -->
+    <SettingsPage
+      v-if="options"
+      :visible="showFullSettings"
+      :options="options"
+      :tracks="midiFile?.getTracks() ?? []"
+      :speedPct="speedPct"
+      @close="showFullSettings = false"
       @apply="onSettingsApply"
     />
   </div>
