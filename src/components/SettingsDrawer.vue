@@ -87,7 +87,7 @@ function incrementLoopEnd() {
   </Transition>
 
   <!-- Drawer panel -->
-  <Transition name="slide-right">
+  <Transition name="slide-left">
     <div v-if="visible" class="drawer" role="dialog" aria-modal="true" aria-label="Settings">
 
       <!-- Header (matches Android: primary-color background, "Settings" title) -->
@@ -247,7 +247,7 @@ function incrementLoopEnd() {
 .drawer {
   position: fixed;
   top: 0;
-  right: 0;
+  left: 0;
   bottom: 0;
   width: 280px;
   max-width: 90vw;
@@ -256,7 +256,7 @@ function incrementLoopEnd() {
   display: flex;
   flex-direction: column;
   z-index: 901;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
 
@@ -264,8 +264,8 @@ function incrementLoopEnd() {
 .fade-enter-active, .fade-leave-active   { transition: opacity 0.2s; }
 .fade-enter-from,  .fade-leave-to        { opacity: 0; }
 
-.slide-right-enter-active, .slide-right-leave-active { transition: transform 0.25s ease; }
-.slide-right-enter-from,   .slide-right-leave-to     { transform: translateX(100%); }
+.slide-left-enter-active, .slide-left-leave-active { transition: transform 0.25s ease; }
+.slide-left-enter-from,   .slide-left-leave-to     { transform: translateX(-100%); }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
 .drawer-header {

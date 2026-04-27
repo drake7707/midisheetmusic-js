@@ -157,12 +157,16 @@ function setOctaveShift(i: number, v: number) {
   if (local.trackOctaveShift) local.trackOctaveShift[i] = v;
 }
 
+/** T / 8va / 8vb options matching Android track settings */
+const octaveOpts = [
+  { label: '8vb', value: -1 },
+  { label: 'T',   value:  0 },
+  { label: '8va', value:  1 },
+];
+
 // ── Apply / cancel ─────────────────────────────────────────────────────────────
 function setVolume(i: number, evt: Event) {
   if (local.volume) local.volume[i] = Number((evt.target as HTMLInputElement).value);
-}
-function setOctaveShiftInput(i: number, evt: Event) {
-  setOctaveShift(i, Number((evt.target as HTMLInputElement).value));
 }
 function onBpmSlider(evt: Event) {
   bpm.value = Number((evt.target as HTMLInputElement).value);
@@ -404,18 +408,18 @@ function apply() {
               </select>
             </div>
 
-            <!-- Row 4: Octave shift -->
-            <div class="track-row-slider">
-              <span class="track-slider-label">Octave shift</span>
-              <input
-                type="range" min="-3" max="3" step="1"
-                :value="getOctaveShift(i)"
-                @input="setOctaveShiftInput(i, $event)"
-                class="track-slider"
-              />
-              <span class="track-slider-val">
-                {{ getOctaveShift(i) >= 0 ? '+' : '' }}{{ getOctaveShift(i) }}
-              </span>
+            <!-- Row 4: Octave shift (T / 8va / 8vb) -->
+            <div class="track-row-octave">
+              <span class="track-slider-label">Octave</span>
+              <div class="octave-btn-group">
+                <button
+                  v-for="opt in octaveOpts"
+                  :key="opt.value"
+                  class="octave-btn"
+                  :class="{ active: getOctaveShift(i) === opt.value }"
+                  @click="setOctaveShift(i, opt.value); "
+                >{{ opt.label }}</button>
+              </div>
             </div>
 
           </div><!-- /track-card -->
@@ -699,5 +703,32 @@ function apply() {
   flex: 1;
   max-width: none;
   font-size: 0.82rem;
+}
+
+.track-row-octave {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 1rem;
+  border-bottom: 1px solid #252525;
+}
+.octave-btn-group {
+  display: flex;
+  gap: 4px;
+}
+.octave-btn {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  background: #2c2c2c;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #aaa;
+  cursor: pointer;
+}
+.octave-btn:hover { background: #3a3a3a; }
+.octave-btn.active {
+  background: #3f51b5;
+  border-color: #3f51b5;
+  color: #fff;
 }
 </style>
