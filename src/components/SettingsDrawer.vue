@@ -1,80 +1,83 @@
 <script setup lang="ts">
 /**
- * SettingsDrawer — quick-access slide-in drawer (Android navigation-drawer style).
- * Shows BPM, twoStaffs, speed, and per-track combined cards.
- * "All Settings" button opens the full SettingsPage.
+ * SettingsDrawer — quick-access slide-in navigation drawer, ported from
+ * the Android settings_drawer.xml layout.
+ *
+ * Sections (matching Android layout exactly):
+ *   • Switch: Scroll Vertically
+ *   • Switch: Use Note Colors
+ *   • Switch: Color Accidentals
+ *   • Loop row (switch + expand arrow → loop start/end sub-items)
+ *   • Switch: Show Measure Numbers
+ *   • Switch: Show Beat Markers
+ *   • Divider
+ *   • Button: More Settings  (→ opens full SettingsPage)
+ *   • Button: Save As Images (not yet implemented, disabled)
  */
-import { reactive, computed, watch } from 'vue';
+import { reactive, watch, ref } from 'vue';
 import type { MidiOptions } from '@/midi/MidiFile';
-import type { MidiTrack } from '@/midi/MidiTrack';
 
 const props = defineProps<{
   visible: boolean;
   options: MidiOptions;
-  tracks: MidiTrack[];
-  speedPct: number;
+  lastMeasure?: number;   // 0-based index of the last measure in the song
 }>();
 
 const emit = defineEmits<{
   close: [];
   openFullSettings: [];
-  apply: [opts: MidiOptions, speedPct: number];
+  apply: [opts: MidiOptions];
 }>();
 
-// ── Local state (mirror of props so changes are staged until Apply) ──────────
 function cloneOpts(o: MidiOptions): MidiOptions {
   return {
     ...o,
-    instruments:         [...o.instruments],
-    mute:                [...o.mute],
-    tracks:              [...o.tracks],
-    volume:              o.volume              ? [...o.volume]              : null,
-    trackOctaveShift:    o.trackOctaveShift    ? [...o.trackOctaveShift]    : null,
-    trackInstrumentNames:o.trackInstrumentNames? [...o.trackInstrumentNames]: null,
-    noteColors:          [...o.noteColors],
+    instruments:          [...o.instruments],
+    mute:                 [...o.mute],
+    tracks:               [...o.tracks],
+    volume:               o.volume              ? [...o.volume]              : null,
+    trackOctaveShift:     o.trackOctaveShift    ? [...o.trackOctaveShift]    : null,
+    trackInstrumentNames: o.trackInstrumentNames? [...o.trackInstrumentNames]: null,
+    noteColors:           [...o.noteColors],
   };
 }
 
-const local       = reactive<MidiOptions>(cloneOpts(props.options));
-const localSpeed  = reactive({ value: props.speedPct });
+const local = reactive<MidiOptions>(cloneOpts(props.options));
+const loopExpanded = ref(false);
 
 watch(() => props.visible, (v) => {
   if (v) {
     Object.assign(local, cloneOpts(props.options));
-    localSpeed.value = props.speedPct;
+    loopExpanded.value = false;
   }
 });
 
-// ── BPM ↔ tempo ───────────────────────────────────────────────────────────────
-const MICROS_PER_MINUTE = 60_000_000;
-/** Default track volume (0–100). */
-const DEFAULT_VOLUME = 100;
-
-const bpm = computed({
-  get: () => Math.round(MICROS_PER_MINUTE / local.tempo),
-  set: (v: number) => {
-    local.tempo = Math.round(MICROS_PER_MINUTE / Math.max(10, Math.min(300, v)));
-  },
-});
-
-function onBpmInput(evt: Event) {
-  const v = parseInt((evt.target as HTMLInputElement).value, 10);
-  if (!isNaN(v)) bpm.value = v;
+/** Emit an apply event whenever the user changes a switch/value. */
+function applyNow() {
+  emit('apply', cloneOpts(local as MidiOptions));
 }
 
-function setVolume(i: number, evt: Event) {
-  if (local.volume) local.volume[i] = Number((evt.target as HTMLInputElement).value);
+/** Last measure number (0-based) — used to clamp loop end. */
+const lastMeasure = () => props.lastMeasure ?? (props.options.lastMeasure ?? 0);
+
+/** Loop measure increment/decrement helpers */
+function decrementLoopStart() {
+  local.playMeasuresInLoopStart = Math.max(0, local.playMeasuresInLoopStart - 1);
+  applyNow();
+}
+function incrementLoopStart() {
+  local.playMeasuresInLoopStart = Math.min(local.playMeasuresInLoopEnd, local.playMeasuresInLoopStart + 1);
+  applyNow();
+}
+function decrementLoopEnd() {
+  local.playMeasuresInLoopEnd = Math.max(local.playMeasuresInLoopStart, local.playMeasuresInLoopEnd - 1);
+  applyNow();
+}
+function incrementLoopEnd() {
+  local.playMeasuresInLoopEnd = Math.min(lastMeasure(), local.playMeasuresInLoopEnd + 1);
+  applyNow();
 }
 
-function applyAndClose() {
-  emit('apply', cloneOpts(local as MidiOptions), localSpeed.value);
-  emit('close');
-}
-
-function trackName(i: number): string {
-  const name = local.trackInstrumentNames?.[i];
-  return name ? name : `Track ${i + 1}`;
-}
 </script>
 
 <template>
@@ -85,118 +88,147 @@ function trackName(i: number): string {
 
   <!-- Drawer panel -->
   <Transition name="slide-right">
-    <div v-if="visible" class="drawer" role="dialog" aria-modal="true" aria-label="Quick Settings">
+    <div v-if="visible" class="drawer" role="dialog" aria-modal="true" aria-label="Settings">
 
-      <!-- Header -->
+      <!-- Header (matches Android: primary-color background, "Settings" title) -->
       <div class="drawer-header">
         <span class="drawer-title">Settings</span>
-        <button class="btn-close" @click="$emit('close')" aria-label="Close">✕</button>
       </div>
 
       <!-- Scrollable body -->
       <div class="drawer-body">
 
-        <!-- ── Tempo / BPM ─────────────────────────────────── -->
-        <div class="section-label">TEMPO</div>
-        <div class="row-between">
-          <span class="row-title">BPM</span>
-          <div class="bpm-controls">
-            <button class="bpm-btn" @click="bpm = bpm - 1">−</button>
-            <input
-              type="number" min="10" max="300" step="1"
-              :value="bpm"
-              @change="onBpmInput"
-              class="bpm-input"
-            />
-            <button class="bpm-btn" @click="bpm = bpm + 1">+</button>
-          </div>
-        </div>
-
-        <!-- ── Speed ──────────────────────────────────────── -->
-        <div class="section-label">SPEED</div>
-        <div class="row-between">
-          <span class="row-title">Speed: {{ localSpeed.value }}%</span>
+        <!-- Scroll Vertically -->
+        <label class="switch-row">
+          <span class="switch-label">Scroll Vertically</span>
           <input
-            type="range" min="10" max="200" step="5"
-            v-model.number="localSpeed.value"
-            class="slider-wide"
+            type="checkbox"
+            class="switch-input"
+            v-model="local.scrollVert"
+            @change="applyNow"
           />
+          <span class="switch-track" :class="{ on: local.scrollVert }">
+            <span class="switch-thumb" />
+          </span>
+        </label>
+
+        <!-- Use Note Colors -->
+        <label class="switch-row">
+          <span class="switch-label">Use Note Colors</span>
+          <input
+            type="checkbox"
+            class="switch-input"
+            v-model="local.useColors"
+            @change="applyNow"
+          />
+          <span class="switch-track" :class="{ on: local.useColors }">
+            <span class="switch-thumb" />
+          </span>
+        </label>
+
+        <!-- Color Accidentals -->
+        <label class="switch-row">
+          <span class="switch-label">Color Accidentals</span>
+          <input
+            type="checkbox"
+            class="switch-input"
+            v-model="local.colorAccidentals"
+            @change="applyNow"
+          />
+          <span class="switch-track" :class="{ on: local.colorAccidentals }">
+            <span class="switch-thumb" />
+          </span>
+        </label>
+
+        <!-- Loop header row: switch + expand/collapse arrow -->
+        <div class="loop-header-row">
+          <label class="switch-row loop-switch-row">
+            <span class="switch-label">Play Measures in a Loop</span>
+            <input
+              type="checkbox"
+              class="switch-input"
+              v-model="local.playMeasuresInLoop"
+              @change="applyNow"
+            />
+            <span class="switch-track" :class="{ on: local.playMeasuresInLoop }">
+              <span class="switch-thumb" />
+            </span>
+          </label>
+          <button
+            class="loop-arrow-btn"
+            :class="{ expanded: loopExpanded }"
+            @click="loopExpanded = !loopExpanded"
+            aria-label="Expand loop settings"
+          >&#9654;</button>
         </div>
 
-        <!-- ── Two Staves ──────────────────────────────────── -->
-        <div class="section-label">LAYOUT</div>
-        <div class="row-between" @click="local.twoStaffs = !local.twoStaffs" role="button">
-          <div>
-            <div class="row-title">Two Staves</div>
-            <div class="row-sub">Combine into treble + bass clef</div>
+        <!-- Loop sub-items (hidden by default, shown when arrow expanded) -->
+        <div v-if="loopExpanded" class="loop-subitems">
+
+          <!-- Loop Start -->
+          <div class="loop-subitem-row">
+            <span class="loop-subitem-label">Start Measure</span>
+            <div class="loop-badge-controls">
+              <button class="loop-badge-btn" @click="decrementLoopStart">−</button>
+              <span class="loop-badge">{{ local.playMeasuresInLoopStart + 1 }}</span>
+              <button class="loop-badge-btn" @click="incrementLoopStart">+</button>
+            </div>
           </div>
-          <div class="toggle" :class="{ on: local.twoStaffs }">
-            <div class="toggle-thumb" />
+
+          <!-- Loop End -->
+          <div class="loop-subitem-row">
+            <span class="loop-subitem-label">End Measure</span>
+            <div class="loop-badge-controls">
+              <button class="loop-badge-btn" @click="decrementLoopEnd">−</button>
+              <span class="loop-badge">{{ local.playMeasuresInLoopEnd + 1 }}</span>
+              <button class="loop-badge-btn" @click="incrementLoopEnd">+</button>
+            </div>
           </div>
+
         </div>
 
-        <!-- ── Show Piano ──────────────────────────────────── -->
-        <div class="row-between" @click="local.showPiano = !local.showPiano" role="button">
-          <div>
-            <div class="row-title">Show Piano</div>
-            <div class="row-sub">Display keyboard at the bottom</div>
-          </div>
-          <div class="toggle" :class="{ on: local.showPiano }">
-            <div class="toggle-thumb" />
-          </div>
-        </div>
+        <!-- Show Measure Numbers -->
+        <label class="switch-row">
+          <span class="switch-label">Show Measure Numbers</span>
+          <input
+            type="checkbox"
+            class="switch-input"
+            v-model="local.showMeasures"
+            @change="applyNow"
+          />
+          <span class="switch-track" :class="{ on: local.showMeasures }">
+            <span class="switch-thumb" />
+          </span>
+        </label>
 
-        <!-- ── Tracks ──────────────────────────────────────── -->
-        <template v-if="tracks.length > 0">
-          <div class="section-label">TRACKS</div>
-          <div
-            v-for="(_, i) in tracks"
-            :key="i"
-            class="track-card"
-          >
-            <!-- Track header -->
-            <div class="track-header">
-              <span class="track-name">{{ trackName(i) }}</span>
-            </div>
+        <!-- Show Beat Markers -->
+        <label class="switch-row">
+          <span class="switch-label">Show Beat Markers</span>
+          <input
+            type="checkbox"
+            class="switch-input"
+            v-model="local.showBeatMarkers"
+            @change="applyNow"
+          />
+          <span class="switch-track" :class="{ on: local.showBeatMarkers }">
+            <span class="switch-thumb" />
+          </span>
+        </label>
 
-            <!-- Combined controls row -->
-            <div class="track-controls">
-              <!-- Show in sheet -->
-              <label class="track-toggle-label">
-                <input type="checkbox" v-model="local.tracks[i]" />
-                <span>Show</span>
-              </label>
+        <!-- Divider -->
+        <div class="divider" />
 
-              <!-- Mute audio -->
-              <label class="track-toggle-label" :class="{ muted: local.mute[i] }">
-                <input type="checkbox" v-model="local.mute[i]" />
-                <span>Mute</span>
-              </label>
-            </div>
+        <!-- More Settings button -->
+        <button class="drawer-action-btn" @click="$emit('openFullSettings')">
+          More Settings
+        </button>
 
-            <!-- Volume slider -->
-            <div class="track-vol-row">
-              <span class="track-vol-label">Vol</span>
-              <input
-                type="range" min="0" max="100" step="5"
-                :value="local.volume?.[i] ?? DEFAULT_VOLUME"
-              @input="setVolume(i, $event)"
-                class="slider-wide"
-              />
-              <span class="track-vol-pct">{{ local.volume?.[i] ?? DEFAULT_VOLUME }}%</span>
-            </div>
-          </div>
-        </template>
+        <!-- Save As Images button (stub — not yet implemented) -->
+        <button class="drawer-action-btn" disabled title="Not available in web version">
+          Save As Images
+        </button>
 
       </div><!-- /.drawer-body -->
-
-      <!-- Footer: Apply + All Settings -->
-      <div class="drawer-footer">
-        <button class="btn-all-settings" @click="$emit('openFullSettings')">
-          All Settings ›
-        </button>
-        <button class="btn-apply" @click="applyAndClose">Apply</button>
-      </div>
 
     </div><!-- /.drawer -->
   </Transition>
@@ -217,14 +249,15 @@ function trackName(i: number): string {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 300px;
+  width: 280px;
   max-width: 90vw;
-  background: #1e1e1e;
-  color: #eee;
+  background: #fff;
+  color: #222;
   display: flex;
   flex-direction: column;
   z-index: 901;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.6);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
 }
 
 /* ── Transitions ──────────────────────────────────────────────────────────── */
@@ -236,136 +269,164 @@ function trackName(i: number): string {
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
 .drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: #2c2c2c;
-  border-bottom: 1px solid #3a3a3a;
+  background: #3f51b5;
+  padding: 16px;
   flex-shrink: 0;
 }
-.drawer-title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.02em; }
-.btn-close { background: none; border: none; color: #aaa; cursor: pointer; font-size: 1rem; padding: 0 0.25rem; }
-.btn-close:hover { color: #fff; }
+.drawer-title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+}
 
 /* ── Body ─────────────────────────────────────────────────────────────────── */
 .drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem 0;
 }
 
-.section-label {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  color: #888;
-  padding: 0.6rem 1rem 0.2rem;
-  text-transform: uppercase;
-}
-
-.row-between {
+/* ── Switch rows (matches SwitchCompat items in XML) ─────────────────────── */
+.switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.55rem 1rem;
+  padding: 12px;
   cursor: pointer;
-  transition: background 0.1s;
+  user-select: none;
 }
-.row-between:hover { background: rgba(255,255,255,0.06); }
-.row-title { font-size: 0.9rem; }
-.row-sub   { font-size: 0.75rem; color: #888; margin-top: 0.1rem; }
+.switch-row:hover { background: rgba(0, 0, 0, 0.04); }
 
-/* BPM */
-.bpm-controls { display: flex; align-items: center; gap: 0.25rem; }
-.bpm-btn {
-  width: 28px; height: 28px;
-  background: #444; border: none; border-radius: 4px;
-  color: #eee; font-size: 1.1rem; cursor: pointer; line-height: 1;
+.switch-label {
+  font-size: 14px;
+  color: #222;
+  flex: 1;
 }
-.bpm-btn:hover { background: #666; }
-.bpm-input {
-  width: 54px; text-align: center;
-  background: #333; border: 1px solid #555; border-radius: 4px;
-  color: #eee; font-size: 0.9rem; padding: 0.2rem 0.25rem;
-}
-.bpm-input::-webkit-outer-spin-button,
-.bpm-input::-webkit-inner-spin-button { -webkit-appearance: none; }
-.bpm-input[type=number] { -moz-appearance: textfield; }
 
-.slider-wide { flex: 1; min-width: 0; }
-
-/* Toggle switch */
-.toggle {
-  width: 40px; height: 22px;
-  background: #555; border-radius: 11px;
-  position: relative; flex-shrink: 0;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-.toggle.on { background: #1a8a1a; }
-.toggle-thumb {
+/* Hide the native checkbox; use custom track/thumb */
+.switch-input {
   position: absolute;
-  top: 2px; left: 2px;
-  width: 18px; height: 18px;
-  background: #fff; border-radius: 50%;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-track {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  background: #bdbdbd;
+  border-radius: 11px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.switch-track.on { background: #3f51b5; }
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
   transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-.toggle.on .toggle-thumb { left: 20px; }
+.switch-track.on .switch-thumb { left: 20px; }
 
-/* ── Track cards ──────────────────────────────────────────────────────────── */
-.track-card {
-  margin: 0.35rem 0.75rem;
-  background: #2a2a2a;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid #3a3a3a;
-}
-.track-header {
-  background: #333;
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid #3a3a3a;
-}
-.track-name { font-size: 0.88rem; font-weight: 600; }
-.track-controls {
+/* ── Loop header row ──────────────────────────────────────────────────────── */
+.loop-header-row {
   display: flex;
-  gap: 1rem;
-  padding: 0.4rem 0.75rem;
+  align-items: center;
 }
-.track-toggle-label {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.82rem; cursor: pointer;
+.loop-switch-row {
+  flex: 1;
 }
-.track-toggle-label.muted { color: #e57373; }
-.track-vol-row {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.25rem 0.75rem 0.5rem;
+.loop-arrow-btn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: #555;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  flex-shrink: 0;
 }
-.track-vol-label { font-size: 0.78rem; color: #888; flex-shrink: 0; }
-.track-vol-pct   { font-size: 0.78rem; color: #aaa; width: 34px; text-align: right; flex-shrink: 0; }
+.loop-arrow-btn.expanded { transform: rotate(90deg); }
 
-/* ── Footer ───────────────────────────────────────────────────────────────── */
-.drawer-footer {
+/* ── Loop sub-items ───────────────────────────────────────────────────────── */
+.loop-subitems {
+  padding-left: 16px;
+}
+
+.loop-subitem-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.6rem 1rem;
-  background: #2c2c2c;
-  border-top: 1px solid #3a3a3a;
-  flex-shrink: 0;
-  gap: 0.5rem;
+  padding: 12px;
+  cursor: default;
 }
-.btn-all-settings {
-  background: none; border: none;
-  color: #4fc3f7; font-size: 0.88rem; cursor: pointer;
-  padding: 0.25rem 0; text-decoration: underline;
+.loop-subitem-row:hover { background: rgba(0, 0, 0, 0.04); }
+
+.loop-subitem-label {
+  font-size: 14px;
+  color: #222;
+  flex: 1;
 }
-.btn-all-settings:hover { color: #81d4fa; }
-.btn-apply {
-  background: #1a6e1a; border: none; border-radius: 4px;
-  color: #fff; font-size: 0.9rem; cursor: pointer;
-  padding: 0.35rem 1rem;
+
+.loop-badge-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
-.btn-apply:hover { background: #28a228; }
+.loop-badge-btn {
+  width: 24px;
+  height: 24px;
+  background: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.loop-badge-btn:hover { background: #bdbdbd; }
+.loop-badge {
+  display: inline-block;
+  background: #3f51b5;
+  color: #fff;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  min-width: 28px;
+  text-align: center;
+}
+
+/* ── Divider ──────────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 8px 0;
+}
+
+/* ── Action buttons (matches Button widgets in XML) ──────────────────────── */
+.drawer-action-btn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 10px 16px;
+  background: #3f51b5;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+.drawer-action-btn:hover:not(:disabled) { background: #303f9f; }
+.drawer-action-btn:disabled {
+  background: #9e9e9e;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
 </style>
