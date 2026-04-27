@@ -14,5 +14,8 @@ export function KeySignatureWidth(key: KeySignature): number {
   void AccidSymbol;
   const keys = key.GetSymbols(Clef.Treble);
   const n = keys.length;
-  return Math.floor(n * 3 * NoteHeight / 2) + LeftMargin * 3;
+  // LeftMargin + 5: initial x-offset used in Staff.Draw before drawing the clef
+  // NoteWidth * 3:  width of a full-size ClefSymbol (matches ClefSymbol.getMinWidth())
+  // n * floor(3 * NoteHeight / 2): cumulative width of n key-signature accidentals
+  return Math.floor(n * 3 * NoteHeight / 2) + LeftMargin + 5 + NoteWidth * 3;
 }

@@ -1,7 +1,8 @@
 /**
  * MidiPlayer.ts — TypeScript port of MidiPlayer.java
- * Plays MIDI files using Tone.js for audio output and handles play/pause/stop/
- * rewind/fastforward, note shading, and speed control.
+ * Plays MIDI files using the Web Audio API + soundfont-player (GM instruments)
+ * for audio output and handles play/pause/stop/rewind/fastforward, note
+ * shading, and speed control.
  */
 
 import { MidiFile } from '@/midi/MidiFile';
@@ -9,12 +10,49 @@ import type { MidiOptions } from '@/midi/MidiFile';
 import type { SheetMusic } from '@/midi/SheetMusic';
 import type { Piano } from '@/midi/Piano';
 import { ImmediateScroll, GradualScroll, DontScroll } from '@/midi/SheetMusic';
-import { getTransport, PolySynth, Synth, Part, start as toneStart } from 'tone';
+import type { Player as SFPlayer } from 'soundfont-player';
+// soundfont-player is a CommonJS module; import via the bundler's interop
+import Soundfont from 'soundfont-player';
 
-/** MIDI note number → frequency in Hz (standard formula) */
-function midiToFreq(midi: number): number {
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
+/**
+ * Standard GM program-number (0-based) → soundfont-player instrument name.
+ * https://www.midi.org/specifications-old/item/gm-level-1-sound-set
+ */
+const GM_INSTRUMENT_NAMES: string[] = [
+  'acoustic_grand_piano', 'bright_acoustic_piano', 'electric_grand_piano',
+  'honkytonk_piano', 'electric_piano_1', 'electric_piano_2',
+  'harpsichord', 'clavinet', 'celesta', 'glockenspiel', 'music_box',
+  'vibraphone', 'marimba', 'xylophone', 'tubular_bells', 'dulcimer',
+  'drawbar_organ', 'percussive_organ', 'rock_organ', 'church_organ',
+  'reed_organ', 'accordion', 'harmonica', 'tango_accordion',
+  'acoustic_guitar_nylon', 'acoustic_guitar_steel', 'electric_guitar_jazz',
+  'electric_guitar_clean', 'electric_guitar_muted', 'overdriven_guitar',
+  'distortion_guitar', 'guitar_harmonics',
+  'acoustic_bass', 'electric_bass_finger', 'electric_bass_pick',
+  'fretless_bass', 'slap_bass_1', 'slap_bass_2', 'synth_bass_1', 'synth_bass_2',
+  'violin', 'viola', 'cello', 'contrabass', 'tremolo_strings',
+  'pizzicato_strings', 'orchestral_harp', 'timpani',
+  'string_ensemble_1', 'string_ensemble_2', 'synth_strings_1', 'synth_strings_2',
+  'choir_aahs', 'voice_oohs', 'synth_choir', 'orchestra_hit',
+  'trumpet', 'trombone', 'tuba', 'muted_trumpet', 'french_horn',
+  'brass_section', 'synth_brass_1', 'synth_brass_2',
+  'soprano_sax', 'alto_sax', 'tenor_sax', 'baritone_sax',
+  'oboe', 'english_horn', 'bassoon', 'clarinet',
+  'piccolo', 'flute', 'recorder', 'pan_flute', 'blown_bottle',
+  'shakuhachi', 'whistle', 'ocarina',
+  'lead_1_square', 'lead_2_sawtooth', 'lead_3_calliope', 'lead_4_chiff',
+  'lead_5_charang', 'lead_6_voice', 'lead_7_fifths', 'lead_8_bass__lead',
+  'pad_1_new_age', 'pad_2_warm', 'pad_3_polysynth', 'pad_4_choir',
+  'pad_5_bowed', 'pad_6_metallic', 'pad_7_halo', 'pad_8_sweep',
+  'fx_1_rain', 'fx_2_soundtrack', 'fx_3_crystal', 'fx_4_atmosphere',
+  'fx_5_brightness', 'fx_6_goblins', 'fx_7_echoes', 'fx_8_scifi',
+  'sitar', 'banjo', 'shamisen', 'koto', 'kalimba', 'bagpipe',
+  'fiddle', 'shanai',
+  'tinkle_bell', 'agogo', 'steel_drums', 'woodblock', 'taiko_drum',
+  'melodic_tom', 'synth_drum', 'reverse_cymbal',
+  'guitar_fret_noise', 'breath_noise', 'seashore', 'bird_tweet',
+  'telephone_ring', 'helicopter', 'applause', 'gunshot',
+];
 
 export const PlayerState = {
   Stopped:   1,
@@ -35,9 +73,16 @@ export class MidiPlayer {
 
   playstate: PlayerStateValue = PlayerState.Stopped;
 
-  private synths: PolySynth[] = [];
-  private tonePart: Part | null = null;
-  private startTime:       number = 0;       // performance.now() when audio started
+  // ---- Audio (soundfont-player + Web Audio API) ----
+  private sfAudioCtx:  AudioContext | null = null;
+  /** program-number → loaded soundfont Player */
+  private sfPlayers:   Map<number, SFPlayer> = new Map();
+  /** audioCtx.currentTime reference for the start of scheduled playback */
+  private sfAudioStart: number = 0;
+  /** Whether a soundfont instrument load is in progress */
+  private sfLoading = false;
+
+  private startTime:       number = 0;       // performance.now() when playback started
   private startPulseTime:  number = 0;
   private currentPulseTime: number = 0;
   private prevPulseTime:   number = -10;
@@ -46,7 +91,7 @@ export class MidiPlayer {
   private timerHandle:     number | null = null;
   private reshadeHandle:   number | null = null;
 
-  private speedPercent: number = 100;   // 10..200
+  private speedPercent: number = 100;   // 10..150
   private doPlayFromLoopEnd = false;
 
   private countInBeatIndex       = 0;
@@ -235,8 +280,12 @@ export class MidiPlayer {
   cleanup(): void {
     this.clearTimer();
     this.clearPendingPlay();
-    getTransport().stop();
-    this.disposeToneAudio();
+    this.disposeSoundfontAudio();
+    if (this.sfAudioCtx) {
+      this.sfAudioCtx.close();
+      this.sfAudioCtx = null;
+    }
+    this.sfPlayers.clear();
     if (this.audioCtx) {
       this.audioCtx.close();
       this.audioCtx = null;
@@ -355,78 +404,89 @@ export class MidiPlayer {
     this.options.tempo = Math.round(1.0 / inverseTmpoScaled);
     this.pulsesPerMsec = this.midifile.getTime().getQuarter() * (1000.0 / this.options.tempo);
 
-    // Dispose any previous Tone.js resources
-    this.disposeToneAudio();
+    // Ensure we have an AudioContext
+    if (!this.sfAudioCtx) {
+      try { this.sfAudioCtx = new AudioContext(); } catch { return; }
+    }
+    if (this.sfAudioCtx.state === 'suspended') {
+      this.sfAudioCtx.resume().catch(() => {});
+    }
 
-    // Get notes using the same data as the visual display
+    // Kick off async instrument loading.  Instruments already in sfPlayers are used
+    // immediately; any not yet loaded will be fetched and the notes for that
+    // instrument will be heard once the load completes.
+    const tracks = this.midifile.ChangeMidiNotes(this.options);
+    const progNums = new Set<number>();
+    for (let i = 0; i < tracks.length; i++) {
+      if (!this.options.mute[i]) progNums.add(this.options.instruments[i] ?? 0);
+    }
+    if (!this.sfLoading) {
+      this.sfLoading = true;
+      this.loadSoundfontInstruments(progNums).finally(() => { this.sfLoading = false; });
+    }
+  }
+
+  /** Async: load any soundfont instruments not yet in sfPlayers. */
+  private async loadSoundfontInstruments(progNums: Set<number>): Promise<void> {
+    if (!this.sfAudioCtx) return;
+    const ac = this.sfAudioCtx;
+    for (const prog of progNums) {
+      if (this.sfPlayers.has(prog)) continue;
+      const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as Parameters<typeof Soundfont.instrument>[1];
+      try {
+        const player = await Soundfont.instrument(ac, sfName, { soundfont: 'MusyngKite', format: 'mp3' });
+        this.sfPlayers.set(prog, player);
+      } catch {
+        // If CDN is unreachable, leave this instrument slot empty (silence for that instrument)
+      }
+    }
+  }
+
+  private disposeSoundfontAudio(): void {
+    // Stop all currently tracked notes in all loaded players
+    for (const player of this.sfPlayers.values()) {
+      try { player.stop(0); } catch { /* ignore */ }
+    }
+  }
+
+  private playAudio(): void {
+    if (!this.midifile || !this.options || !this.sfAudioCtx) return;
+    const ac = this.sfAudioCtx;
+    if (ac.state === 'suspended') {
+      ac.resume().catch(() => {});
+    }
+
+    // Tiny look-ahead so the very first notes are not clipped by buffer latency.
+    // Offset startTime by the same amount so visual and audio stay in sync.
+    const LOOKAHEAD_SEC = 0.05;
+    this.sfAudioStart = ac.currentTime + LOOKAHEAD_SEC;
+    this.startTime    = performance.now() + LOOKAHEAD_SEC * 1000;
+
     const tracks = this.midifile.ChangeMidiNotes(this.options);
     const pulsesPerSec = this.pulsesPerMsec * 1000;
 
-    // One PolySynth per track, capped for typical piano pieces to reduce CPU usage.
-    // Most MIDI files relevant to this app are piano arrangements with ≤ 2 voices.
-    const MAX_POLYPHONY_SYNTHS = 2;
-    const numSynths = Math.max(1, Math.min(tracks.length, MAX_POLYPHONY_SYNTHS));
-    for (let i = 0; i < numSynths; i++) {
-      const synth = new PolySynth(Synth, {
-        oscillator: { type: 'triangle' as const },
-        envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 },
-      });
-      synth.toDestination();
-      this.synths.push(synth);
-    }
-
-    // Build note events starting from startPulseTime
-    type NoteEvent = { time: number; note: number; duration: number; track: number };
-    const events: NoteEvent[] = [];
     for (let trackIdx = 0; trackIdx < tracks.length; trackIdx++) {
       if (this.options.mute[trackIdx]) continue;
+      const prog = this.options.instruments[trackIdx] ?? 0;
+      const player = this.sfPlayers.get(prog);
+      if (!player) continue; // instrument not loaded yet – silent for this track
+
       const notes = tracks[trackIdx].getNotes();
       for (const note of notes) {
         const noteStart = note.getStartTime();
         if (noteStart < this.startPulseTime) continue;
         const startSec = (noteStart - this.startPulseTime) / pulsesPerSec;
-        const durSec = Math.max(0.05, note.getDuration() / pulsesPerSec);
-        events.push({ time: startSec, note: note.getNumber(), duration: durSec, track: trackIdx });
+        const durSec   = Math.max(0.05, note.getDuration() / pulsesPerSec);
+        const when     = this.sfAudioStart + startSec;
+        try {
+          player.play(String(note.getNumber()), when, { duration: durSec, gain: 0.7 });
+        } catch { /* ignore single-note errors */ }
       }
     }
-
-    // Schedule all notes via a Tone.Part
-    if (events.length > 0) {
-      const synthsRef = this.synths;
-      this.tonePart = new Part<NoteEvent>((time, value) => {
-        const synthIdx = Math.min(value.track, synthsRef.length - 1);
-        synthsRef[synthIdx].triggerAttackRelease(midiToFreq(value.note), value.duration, time, 0.7);
-      }, events);
-      this.tonePart.start(0);
-    }
-
-    // Reset transport so it starts from 0 on playAudio()
-    getTransport().stop();
-    getTransport().position = 0;
-  }
-
-  private disposeToneAudio(): void {
-    if (this.tonePart) {
-      try { this.tonePart.stop(0); this.tonePart.dispose(); } catch { /* ignore */ }
-      this.tonePart = null;
-    }
-    for (const s of this.synths) {
-      try { s.releaseAll(); s.dispose(); } catch { /* ignore */ }
-    }
-    this.synths = [];
-  }
-
-  private playAudio(): void {
-    toneStart().catch(() => {});
-    getTransport().start();
-    this.startTime = performance.now();
   }
 
   private stopAudio(): void {
-    getTransport().pause();
-    for (const s of this.synths) {
-      try { s.releaseAll(); } catch { /* ignore */ }
-    }
+    this.disposeSoundfontAudio();
   }
 
   private timerCallback(): void {
@@ -482,8 +542,7 @@ export class MidiPlayer {
     this.clearTimer();
     this.removeShading();
     this.scrollToStart();
-    getTransport().stop();
-    this.disposeToneAudio();
+    this.disposeSoundfontAudio();
   }
 
   private removeShading(): void {
@@ -522,8 +581,11 @@ export class MidiPlayer {
     this.stopAudio();
     this.startPulseTime = this.currentPulseTime;
     this.options!.pauseTime = Math.floor(this.currentPulseTime - (this.options!.shifttime));
-    this.createMidiAudio();
-    this.startTime = performance.now();
+    // Recompute tempo/pulsesPerMsec for new speed, then reschedule audio
+    const inverseTempo = 1.0 / this.midifile!.getTime().getTempo();
+    const inverseTmpoScaled = inverseTempo * this.speedPercent / 100.0;
+    this.options!.tempo = Math.round(1.0 / inverseTmpoScaled);
+    this.pulsesPerMsec = this.midifile!.getTime().getQuarter() * (1000.0 / this.options!.tempo);
     this.playAudio();
     this.timerHandle = window.setInterval(() => this.timerCallback(), 100);
   }
