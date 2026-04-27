@@ -417,7 +417,7 @@ function apply() {
                   :key="opt.value"
                   class="octave-btn"
                   :class="{ active: getOctaveShift(i) === opt.value }"
-                  @click="setOctaveShift(i, opt.value); "
+                  @click="setOctaveShift(i, opt.value)"
                 >{{ opt.label }}</button>
               </div>
             </div>

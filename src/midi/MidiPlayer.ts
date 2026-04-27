@@ -366,8 +366,10 @@ export class MidiPlayer {
     // scheduling any Web Audio API notes.  This ensures the first play works.
     await this.sfLoadingPromise;
 
-    // The user may have paused or stopped while instruments were loading.
-    if (this.playstate !== PlayerState.Playing) return;
+    // The user may have paused/stopped while instruments were loading, or
+    // SetMidiFile may have been called with new options (which resets playstate).
+    // Guard against both by checking playstate and the options reference.
+    if (this.playstate !== PlayerState.Playing || this.options !== opts) return;
 
     // Re-anchor startPulseTime to the current visual position so that audio
     // starts in sync with the sheet music regardless of how long loading took.
