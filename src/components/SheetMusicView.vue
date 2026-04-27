@@ -6,6 +6,10 @@ const props = defineProps<{
   sheet: SheetMusic | null;
 }>();
 
+const emit = defineEmits<{
+  (e: 'canvasClick', x: number, y: number): void;
+}>();
+
 const containerEl = ref<HTMLDivElement | null>(null);
 const canvasEl    = ref<HTMLCanvasElement | null>(null);
 
@@ -30,6 +34,18 @@ function scrollTo(_x: number, y: number, _immediate: boolean): void {
   el.scrollTo({ top: targetTop, behavior: 'instant' });
 }
 
+function onCanvasClick(event: MouseEvent): void {
+  const canvas = canvasEl.value;
+  if (!canvas || !props.sheet) return;
+  const rect = canvas.getBoundingClientRect();
+  // Compute coordinates in canvas space (accounting for CSS scaling)
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (event.clientX - rect.left) * scaleX;
+  const y = (event.clientY - rect.top)  * scaleY;
+  emit('canvasClick', x, y);
+}
+
 watch(() => props.sheet, drawSheet);
 onMounted(drawSheet);
 
@@ -38,7 +54,7 @@ defineExpose({ getCtx, drawSheet, scrollTo });
 
 <template>
   <div ref="containerEl" class="sheet-container">
-    <canvas ref="canvasEl" class="sheet-canvas"></canvas>
+    <canvas ref="canvasEl" class="sheet-canvas" @click="onCanvasClick"></canvas>
     <div v-if="!sheet" class="sheet-empty">
       <p>Load a MIDI file to display sheet music</p>
     </div>

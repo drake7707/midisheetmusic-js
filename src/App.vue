@@ -187,6 +187,11 @@ function fastForward() { player.FastForward(); playState.value = player.getPlayS
 function isPlaying(): boolean { return playState.value === PlayerState.Playing; }
 function hasMidi():   boolean { return midiFile.value !== null; }
 
+/** Called when the user clicks on the sheet music canvas — seek to that position. */
+function onSheetClick(x: number, y: number) {
+  player.MoveToClicked(x, y);
+}
+
 /** Speed display string (3 chars, monospace like the Android txt_speed) */
 const speedDisplay = computed(() => `${speedPct.value}%`);
 
@@ -300,7 +305,7 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
       <div v-if="!hasMidi()" class="drop-hint" @click="fileInputRef?.click()">
         <p>Click 📂 or here to open a MIDI file</p>
       </div>
-      <SheetMusicView v-else ref="sheetViewRef" :sheet="sheet" />
+      <SheetMusicView v-else ref="sheetViewRef" :sheet="sheet" @canvasClick="onSheetClick" />
     </main>
 
     <!-- ---- Piano ---- -->
