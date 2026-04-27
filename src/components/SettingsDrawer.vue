@@ -59,6 +59,25 @@ function applyNow() {
 
 /** Last measure number (0-based) — used to clamp loop end. */
 const lastMeasure = () => props.lastMeasure ?? (props.options.lastMeasure ?? 0);
+
+/** Loop measure increment/decrement helpers */
+function decrementLoopStart() {
+  local.playMeasuresInLoopStart = Math.max(0, local.playMeasuresInLoopStart - 1);
+  applyNow();
+}
+function incrementLoopStart() {
+  local.playMeasuresInLoopStart = Math.min(local.playMeasuresInLoopEnd, local.playMeasuresInLoopStart + 1);
+  applyNow();
+}
+function decrementLoopEnd() {
+  local.playMeasuresInLoopEnd = Math.max(local.playMeasuresInLoopStart, local.playMeasuresInLoopEnd - 1);
+  applyNow();
+}
+function incrementLoopEnd() {
+  local.playMeasuresInLoopEnd = Math.min(lastMeasure(), local.playMeasuresInLoopEnd + 1);
+  applyNow();
+}
+
 </script>
 
 <template>
@@ -150,9 +169,9 @@ const lastMeasure = () => props.lastMeasure ?? (props.options.lastMeasure ?? 0);
           <div class="loop-subitem-row">
             <span class="loop-subitem-label">Start Measure</span>
             <div class="loop-badge-controls">
-              <button class="loop-badge-btn" @click="local.playMeasuresInLoopStart = Math.max(0, local.playMeasuresInLoopStart - 1); applyNow()">−</button>
+              <button class="loop-badge-btn" @click="decrementLoopStart">−</button>
               <span class="loop-badge">{{ local.playMeasuresInLoopStart + 1 }}</span>
-              <button class="loop-badge-btn" @click="local.playMeasuresInLoopStart = Math.min(local.playMeasuresInLoopEnd, local.playMeasuresInLoopStart + 1); applyNow()">+</button>
+              <button class="loop-badge-btn" @click="incrementLoopStart">+</button>
             </div>
           </div>
 
@@ -160,9 +179,9 @@ const lastMeasure = () => props.lastMeasure ?? (props.options.lastMeasure ?? 0);
           <div class="loop-subitem-row">
             <span class="loop-subitem-label">End Measure</span>
             <div class="loop-badge-controls">
-              <button class="loop-badge-btn" @click="local.playMeasuresInLoopEnd = Math.max(local.playMeasuresInLoopStart, local.playMeasuresInLoopEnd - 1); applyNow()">−</button>
+              <button class="loop-badge-btn" @click="decrementLoopEnd">−</button>
               <span class="loop-badge">{{ local.playMeasuresInLoopEnd + 1 }}</span>
-              <button class="loop-badge-btn" @click="local.playMeasuresInLoopEnd = Math.min(lastMeasure(), local.playMeasuresInLoopEnd + 1); applyNow()">+</button>
+              <button class="loop-badge-btn" @click="incrementLoopEnd">+</button>
             </div>
           </div>
 

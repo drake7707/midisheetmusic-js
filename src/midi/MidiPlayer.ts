@@ -54,6 +54,10 @@ const GM_INSTRUMENT_NAMES: string[] = [
   'telephone_ring', 'helicopter', 'applause', 'gunshot',
 ];
 
+/** MusyngKite is the default soundfont; FluidR3_GM is the alternative. */
+const SF_SOUNDFONT = 'MusyngKite';
+const SF_FORMAT    = 'mp3';
+
 export const PlayerState = {
   Stopped:   1,
   Playing:   2,
@@ -432,9 +436,9 @@ export class MidiPlayer {
     const ac = this.sfAudioCtx;
     for (const prog of progNums) {
       if (this.sfPlayers.has(prog)) continue;
-      const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as Parameters<typeof Soundfont.instrument>[1];
+      const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as import('soundfont-player').InstrumentName;
       try {
-        const player = await Soundfont.instrument(ac, sfName, { soundfont: 'MusyngKite', format: 'mp3' });
+        const player = await Soundfont.instrument(ac, sfName, { soundfont: SF_SOUNDFONT, format: SF_FORMAT });
         this.sfPlayers.set(prog, player);
       } catch {
         // If CDN is unreachable, leave this instrument slot empty (silence for that instrument)

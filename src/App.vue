@@ -264,6 +264,7 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
         :class="{ 'tb-btn-clef-active': bassVisible }"
         :disabled="!hasMidi() || (options?.tracks.length ?? 0) < 2"
         title="Bass clef (left hand)"
+        aria-label="Toggle bass clef (left hand)"
         @click="toggleBassClef"
       >𝄢</button>
 
@@ -273,6 +274,7 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
         :class="{ 'tb-btn-clef-active': trebleVisible }"
         :disabled="!hasMidi()"
         title="Treble clef (right hand)"
+        aria-label="Toggle treble clef (right hand)"
         @click="toggleTrebleClef"
       >𝄞</button>
 
