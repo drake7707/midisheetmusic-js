@@ -1244,7 +1244,9 @@ export class MidiFile {
     }
 
     if (options.twoStaffs) {
-      return MidiFile.CombineToTwoTracks(newtracks, this.timesig.getMeasure());
+      const combined = MidiFile.CombineToTwoTracks(newtracks, this.timesig.getMeasure());
+      newtracks.length = 0;
+      newtracks.push(...combined);
     }
     if (options.shifttime !== 0) {
       MidiFile.ShiftTime(newtracks, options.shifttime);
