@@ -85,6 +85,8 @@ export class MidiPlayer {
   private sfAudioStart: number = 0;
   /** Chain of instrument-loading promises – always resolves, never rejects */
   private sfLoadingPromise: Promise<void> = Promise.resolve();
+  /** True while soundfont instruments are being fetched from the CDN. */
+  private _loadingInstruments = false;
 
   private startTime:       number = 0;       // performance.now() when playback started
   private startPulseTime:  number = 0;
@@ -132,6 +134,7 @@ export class MidiPlayer {
   getCurrentPulseTime(): number            { return this.currentPulseTime; }
   getSpeedPercent():     number            { return this.speedPercent; }
   setSpeedPercent(s: number): void         { this.speedPercent = Math.max(10, Math.min(200, s)); }
+  isLoadingInstruments(): boolean          { return this._loadingInstruments; }
   getCurrentMeasure(): number {
     if (!this.midifile || !this.options) return 0;
     const ts = this.options.time ?? this.midifile.getTime();
@@ -456,15 +459,21 @@ export class MidiPlayer {
   private async loadSoundfontInstruments(progNums: Set<number>): Promise<void> {
     if (!this.sfAudioCtx) return;
     const ac = this.sfAudioCtx;
-    for (const prog of progNums) {
-      if (this.sfPlayers.has(prog)) continue;
-      const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as import('soundfont-player').InstrumentName;
-      try {
-        const player = await Soundfont.instrument(ac, sfName, { soundfont: SF_SOUNDFONT, format: SF_FORMAT });
-        this.sfPlayers.set(prog, player);
-      } catch {
-        // If CDN is unreachable, leave this instrument slot empty (silence for that instrument)
+    const missing = [...progNums].filter(p => !this.sfPlayers.has(p));
+    if (missing.length === 0) return;
+    this._loadingInstruments = true;
+    try {
+      for (const prog of missing) {
+        const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as import('soundfont-player').InstrumentName;
+        try {
+          const player = await Soundfont.instrument(ac, sfName, { soundfont: SF_SOUNDFONT, format: SF_FORMAT });
+          this.sfPlayers.set(prog, player);
+        } catch {
+          // If CDN is unreachable, leave this instrument slot empty (silence for that instrument)
+        }
       }
+    } finally {
+      this._loadingInstruments = false;
     }
   }
 
