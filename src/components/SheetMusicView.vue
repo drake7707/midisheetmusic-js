@@ -8,10 +8,15 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'canvasClick', x: number, y: number): void;
+  (e: 'drawError', msg: string): void;
 }>();
 
 const containerEl = ref<HTMLDivElement | null>(null);
 const canvasEl    = ref<HTMLCanvasElement | null>(null);
+
+// Most browsers cap canvas dimensions at 32767 × 32767 px.
+// Exceeding this causes the context to enter a permanent error state.
+const MAX_CANVAS_DIM = 16384;
 
 function getCtx(): CanvasRenderingContext2D | null {
   return canvasEl.value?.getContext('2d') ?? null;
@@ -21,10 +26,22 @@ function drawSheet(): void {
   const ctx = getCtx();
   if (!ctx || !props.sheet) return;
   const s = props.sheet;
+  const w = s.getWidth();
+  const h = s.getHeight();
+  if (w > MAX_CANVAS_DIM || h > MAX_CANVAS_DIM) {
+    emit('drawError',
+      `Sheet music is too large to render (${w}×${h} px). ` +
+      `Try enabling vertical scrolling or reducing the number of visible tracks.`);
+    return;
+  }
   const canvas = canvasEl.value!;
-  canvas.width  = s.getWidth();
-  canvas.height = s.getHeight();
-  s.Draw(ctx);
+  canvas.width  = w;
+  canvas.height = h;
+  try {
+    s.Draw(ctx);
+  } catch (e) {
+    emit('drawError', `Canvas draw failed: ${(e as Error).message}`);
+  }
 }
 
 function scrollTo(_x: number, y: number, _immediate: boolean): void {

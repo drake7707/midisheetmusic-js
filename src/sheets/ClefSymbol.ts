@@ -54,7 +54,7 @@ export class ClefSymbol implements MusicSymbol {
         y = ytop + Math.floor(StaffHeight * 3 / 4);
       } else {
         fontSize = Math.floor(3 * StaffHeight / 2) + Math.floor(NoteHeight / 2);
-        y = ytop + StaffHeight - NoteHeight;
+        y = ytop + StaffHeight + NoteHeight;
       }
     } else {
       symbol = '\u{1D122}'; // 𝄢 bass clef

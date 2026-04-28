@@ -21,6 +21,7 @@ const fileName    = ref('');
 const errorMsg    = ref('');
 const playState   = ref<PlayerStateValue>(PlayerState.Stopped);
 const speedPct    = ref(100);
+const loadingAudio = ref(false);
 const showDrawer      = ref(false);
 const showFullSettings = ref(false);
 
@@ -34,6 +35,7 @@ function startPolling() {
   if (pollHandle !== null) return;
   pollHandle = setInterval(() => {
     playState.value = player.getPlayState();
+    loadingAudio.value = player.isLoadingInstruments();
   }, 200);
 }
 function stopPolling() {
@@ -99,7 +101,12 @@ function setupPlayer(midi: MidiFile, opts: MidiOptions, s: SheetMusic, p: Piano)
 async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
   if (!midiFile.value) return;
   const midi = midiFile.value;
-  const opts = newOpts;
+
+  // Keep trackInstrumentNames in sync with the (possibly changed) instruments array.
+  const updatedNames = newOpts.instruments.map(
+    prog => prog < InstrumentAbbreviations.length ? InstrumentAbbreviations[prog] : `Prog.${prog}`,
+  );
+  const opts = { ...newOpts, trackInstrumentNames: updatedNames };
 
   const wasPlaying = player.isPlaying();
   if (wasPlaying) player.Pause();
@@ -192,6 +199,11 @@ function onSheetClick(x: number, y: number) {
   player.MoveToClicked(x, y);
 }
 
+/** Called when the canvas draw fails (e.g. sheet too large for browser canvas limits). */
+function onDrawError(msg: string) {
+  errorMsg.value = msg;
+}
+
 /** Speed display string (3 chars, monospace like the Android txt_speed) */
 const speedDisplay = computed(() => `${speedPct.value}%`);
 
@@ -234,9 +246,12 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
       <button
         class="tb-btn tb-btn-play"
         :disabled="!hasMidi()"
-        :title="isPlaying() ? 'Pause' : 'Play'"
+        :title="loadingAudio ? 'Loading instruments…' : isPlaying() ? 'Pause' : 'Play'"
         @click="isPlaying() ? pause() : play()"
-      >{{ isPlaying() ? '⏸' : '▶' }}</button>
+      >
+        <span v-if="loadingAudio" class="spinner" title="Loading instruments…">⏳</span>
+        <span v-else>{{ isPlaying() ? '⏸' : '▶' }}</span>
+      </button>
 
       <!-- btn_rewind (previous measure) -->
       <button class="tb-btn" :disabled="!hasMidi()" title="Rewind" @click="rewind">⏮</button>
@@ -305,7 +320,7 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
       <div v-if="!hasMidi()" class="drop-hint" @click="fileInputRef?.click()">
         <p>Click 📂 or here to open a MIDI file</p>
       </div>
-      <SheetMusicView v-else ref="sheetViewRef" :sheet="sheet" @canvasClick="onSheetClick" />
+      <SheetMusicView v-else ref="sheetViewRef" :sheet="sheet" @canvasClick="onSheetClick" @drawError="onDrawError" />
     </main>
 
     <!-- ---- Piano ---- -->
@@ -452,5 +467,15 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
 .piano-footer {
   flex-shrink: 0;
   border-top: 2px solid #333;
+}
+
+/* ── Loading spinner ─────────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
 }
 </style>
