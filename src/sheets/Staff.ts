@@ -92,7 +92,7 @@ export class Staff {
    *  matching the same logic used by ShadeNotes to place the shade highlight. */
   getShadeXPos(pulseTime: number): number {
     let xpos = this.keysigWidth;
-    let x_shade = 0;
+    let xShade = 0;
     for (let i = 0; i < this.symbols.length; i++) {
       const sym = this.symbols[i];
       if (sym instanceof BarSymbol) { xpos += sym.getWidth(); continue; }
@@ -105,11 +105,11 @@ export class Staff {
       } else {
         end = this.endtime;
       }
-      if (start > pulseTime) { if (x_shade === 0) x_shade = xpos; return x_shade; }
+      if (start > pulseTime) { if (xShade === 0) xShade = xpos; return xShade; }
       if (start <= pulseTime && pulseTime < end) { return xpos; }
       xpos += sym.getWidth();
     }
-    return x_shade;
+    return xShade;
   }
 
   private static FindClef(list: MusicSymbol[]): Clef {

@@ -371,8 +371,9 @@ export class MidiPlayer {
     // The user may have paused/stopped while instruments were loading, or
     // SetMidiFile may have been called with new options (which resets the player).
     if (this.options !== opts) return;
-    // Cast to break TypeScript's overly aggressive narrowing after the assignment above.
-    const stateAfterLoad = this.playstate as PlayerStateValue;
+    // Use the accessor method so TypeScript does not narrow based on the
+    // earlier `this.playstate = PlayerState.Playing` assignment.
+    const stateAfterLoad = this.getPlayState();
     if (stateAfterLoad === PlayerState.InitPause) {
       // User pressed Pause during loading — honour it.
       this.playstate = PlayerState.Paused;

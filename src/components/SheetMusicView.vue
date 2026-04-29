@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import type { SheetMusic } from '@/midi/SheetMusic';
-import { ImmediateScroll } from '@/midi/SheetMusic';
 
 const props = defineProps<{
   sheet: SheetMusic | null;
@@ -79,8 +78,10 @@ let lastShadePulse = -1;
 let lastPrevPulse  = -1;
 
 // ---- Public: viewport-aware shade + scroll (called by MidiPlayer callback) ----
-/** Draw the visible viewport with shading and optionally scroll to the shaded note. */
-function renderAndScroll(currentPulse: number, prevPulse: number, scrollType: number): void {
+/** Draw the visible viewport with shading and optionally scroll to the shaded note.
+ *  `scrollType` is ImmediateScroll or GradualScroll; both currently scroll
+ *  synchronously (smooth-scroll animation is not yet implemented). */
+function renderAndScroll(currentPulse: number, prevPulse: number, _scrollType: number): void {
   const s = props.sheet;
   const el = containerEl.value;
   if (!s || !el) return;
@@ -93,7 +94,6 @@ function renderAndScroll(currentPulse: number, prevPulse: number, scrollType: nu
     // canvas is drawn at the correct viewport before we apply shading.
     const { xShade, yShade } = s.getShadePosition(currentPulse);
 
-    const immediate = scrollType === ImmediateScroll;
     const targetTop  = Math.max(0, yShade - el.clientHeight / 3);
     const targetLeft = Math.max(0, xShade - el.clientWidth  / 3);
 
@@ -103,7 +103,6 @@ function renderAndScroll(currentPulse: number, prevPulse: number, scrollType: nu
       scrollY.value = el.scrollTop;
       scrollX.value = el.scrollLeft;
     }
-    void immediate; // kept for future smooth-scroll support
   }
 
   drawSheet(currentPulse, prevPulse);
