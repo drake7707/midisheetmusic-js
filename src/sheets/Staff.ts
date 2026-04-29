@@ -88,6 +88,30 @@ export class Staff {
   setEndTime(value: number): void { this.endtime = value; }
   setSwingLabel(label: string | null): void { this.swingLabel = label; }
 
+  /** Return the canvas X position of the symbol at or just after `pulseTime`,
+   *  matching the same logic used by ShadeNotes to place the shade highlight. */
+  getShadeXPos(pulseTime: number): number {
+    let xpos = this.keysigWidth;
+    let xShade = 0;
+    for (let i = 0; i < this.symbols.length; i++) {
+      const sym = this.symbols[i];
+      if (sym instanceof BarSymbol) { xpos += sym.getWidth(); continue; }
+      const start = sym.getStartTime();
+      let end = 0;
+      if (i + 2 < this.symbols.length && this.symbols[i + 1] instanceof BarSymbol) {
+        end = this.symbols[i + 2].getStartTime();
+      } else if (i + 1 < this.symbols.length) {
+        end = this.symbols[i + 1].getStartTime();
+      } else {
+        end = this.endtime;
+      }
+      if (start > pulseTime) { if (xShade === 0) xShade = xpos; return xShade; }
+      if (start <= pulseTime && pulseTime < end) { return xpos; }
+      xpos += sym.getWidth();
+    }
+    return xShade;
+  }
+
   private static FindClef(list: MusicSymbol[]): Clef {
     for (const m of list) {
       if (m instanceof ChordSymbol) return (m as ChordSymbol).getClef();

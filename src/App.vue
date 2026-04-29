@@ -81,18 +81,19 @@ function setupPlayer(midi: MidiFile, opts: MidiOptions, s: SheetMusic, p: Piano)
   player.setSheetCtxProvider(() => sheetViewRef.value?.getCtx() ?? null);
   player.setPianoCtxProvider(() => pianoViewRef.value?.getCtx() ?? null);
   player.setRedrawFn(() => {
-    const ctx = sheetViewRef.value?.getCtx();
-    if (ctx) s.Draw(ctx);
+    sheetViewRef.value?.drawSheet();
   });
   player.setScrollFn((x, y, immediate) => {
     sheetViewRef.value?.scrollTo(x, y, immediate);
+  });
+  player.setViewportShadeFn((currentPulse, prevPulse, scrollType) => {
+    sheetViewRef.value?.renderAndScroll(currentPulse, prevPulse, scrollType);
   });
   player.SetPiano(p);
   player.SetMidiFile(midi, opts, s);
 
   // Initial draw
-  const sheetCtx = sheetViewRef.value?.getCtx();
-  if (sheetCtx) s.Draw(sheetCtx);
+  sheetViewRef.value?.drawSheet();
   const pianoCtx = pianoViewRef.value?.getCtx();
   if (pianoCtx) p.Draw(pianoCtx);
 }

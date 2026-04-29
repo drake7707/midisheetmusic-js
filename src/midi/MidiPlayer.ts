@@ -116,7 +116,8 @@ export class MidiPlayer {
       this.options = opt;
       this.sheet = s;
       if (this._redrawFn) this._redrawFn();
-      this.sheet.ShadeNotes(this._sheetCtx()!, this.currentPulseTime, -1);
+      // Shade current note using whichever path is active.
+      this._shadeNotes(this.currentPulseTime, -1, ImmediateScroll);
       this.clearTimer();
       this.reshadeHandle = window.setTimeout(() => this.reShade(), 500);
     } else {
@@ -357,28 +358,40 @@ export class MidiPlayer {
     // Also enqueues instrument loading onto sfLoadingPromise.
     this.createMidiAudio();
 
-    // Start visual timer and shading immediately so the UI responds right away.
+    // Set Playing state immediately so the UI shows the correct button state
+    // and the loading spinner while instruments are being fetched.
+    // We intentionally do NOT start the visual timer yet — the sheet music
+    // should only advance once everything is ready to play.
     this.playstate = PlayerState.Playing;
+
+    // Wait for all required soundfont instruments to finish loading before
+    // starting visual or audio playback.
+    await this.sfLoadingPromise;
+
+    // The user may have paused/stopped while instruments were loading, or
+    // SetMidiFile may have been called with new options (which resets the player).
+    if (this.options !== opts) return;
+    // Use the accessor method so TypeScript does not narrow based on the
+    // earlier `this.playstate = PlayerState.Playing` assignment.
+    const stateAfterLoad = this.getPlayState();
+    if (stateAfterLoad === PlayerState.InitPause) {
+      // User pressed Pause during loading — honour it.
+      this.playstate = PlayerState.Paused;
+      return;
+    }
+    if (stateAfterLoad !== PlayerState.Playing) return;
+
+    // Anchor timing to now (instruments just finished loading; currentPulseTime
+    // is unchanged because no timer was running during the load).
+    this.startPulseTime = this.currentPulseTime;
+    opts.pauseTime = Math.floor(this.currentPulseTime - shifttime);
     this.startTime = performance.now();
+
+    // Now start the visual timer and apply the initial note shading.
     this.clearTimer();
     this.timerHandle = window.setInterval(() => this.timerCallback(), 100);
     this._shadeNotes(this.currentPulseTime, this.prevPulseTime, GradualScroll);
     this._shadeNotePiano(this.currentPulseTime, this.prevPulseTime);
-
-    // Wait for all required soundfont instruments to finish loading before
-    // scheduling any Web Audio API notes.  This ensures the first play works.
-    await this.sfLoadingPromise;
-
-    // The user may have paused/stopped while instruments were loading, or
-    // SetMidiFile may have been called with new options (which resets playstate).
-    // Guard against both by checking playstate and the options reference.
-    if (this.playstate !== PlayerState.Playing || this.options !== opts) return;
-
-    // Re-anchor startPulseTime to the current visual position so that audio
-    // starts in sync with the sheet music regardless of how long loading took.
-    this.startPulseTime = this.currentPulseTime;
-    opts.pauseTime = Math.floor(this.currentPulseTime - shifttime);
-    this.startTime = performance.now();
 
     if (opts.countInMeasures > 0 && opts.pauseTime === 0 && !this.doPlayFromLoopEnd) {
       this.countInBeatsPerMeasure = ts.getNumerator();
@@ -641,11 +654,17 @@ export class MidiPlayer {
   private _pianoCtxProvider:  (() => CanvasRenderingContext2D | null) | null = null;
   private _scrollFn: ((x: number, y: number, immediate: boolean) => void) | null = null;
   private _redrawFn: (() => void) | null = null;
+  /** When set, replaces the legacy _shadeNotes path (ctx + scrollFn) with a
+   *  single viewport-aware callback that handles drawing, shading and scrolling. */
+  private _viewportShadeFn: ((currentPulse: number, prevPulse: number, scrollType: number) => void) | null = null;
 
   setSheetCtxProvider(fn: () => CanvasRenderingContext2D | null): void { this._sheetCtxProvider = fn; }
   setPianoCtxProvider(fn: () => CanvasRenderingContext2D | null): void { this._pianoCtxProvider = fn; }
   setScrollFn(fn: (x: number, y: number, immediate: boolean) => void): void { this._scrollFn = fn; }
   setRedrawFn(fn: () => void): void { this._redrawFn = fn; }
+  setViewportShadeFn(fn: (currentPulse: number, prevPulse: number, scrollType: number) => void): void {
+    this._viewportShadeFn = fn;
+  }
 
   private _sheetCtx(): CanvasRenderingContext2D | null {
     return this._sheetCtxProvider ? this._sheetCtxProvider() : null;
@@ -655,6 +674,11 @@ export class MidiPlayer {
   }
 
   private _shadeNotes(currentPulse: number, prevPulse: number, scrollType: number): void {
+    if (this._viewportShadeFn) {
+      this._viewportShadeFn(currentPulse, prevPulse, scrollType);
+      return;
+    }
+    // Legacy path (non-viewport rendering)
     if (!this.sheet) return;
     const ctx = this._sheetCtx();
     if (!ctx) return;
