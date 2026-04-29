@@ -215,6 +215,24 @@ export class SheetMusic implements ISheetMusic {
     ctx.restore();
   }
 
+  /** Return the pixel position the playback cursor should scroll to for the
+   *  given pulse time, without modifying the canvas.  Mirrors the logic in
+   *  ShadeNotes so the viewport can scroll BEFORE drawing. */
+  getShadePosition(currentPulseTime: number): { xShade: number; yShade: number } {
+    let xShade = 0, yShade = 0;
+    for (const staff of this.staffs) {
+      if (currentPulseTime >= staff.getEndTime()) {
+        yShade += staff.getHeight();
+      } else {
+        if (currentPulseTime >= staff.getStartTime()) {
+          xShade = staff.getShadeXPos(currentPulseTime);
+        }
+        break;
+      }
+    }
+    return { xShade, yShade };
+  }
+
   /** Shade notes at currentPulse, unshade at prevPulse.
    *  Returns {x, y} pixel position of the shaded note (for scrolling).
    */
