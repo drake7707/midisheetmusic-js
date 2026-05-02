@@ -41,8 +41,8 @@ export class KeySignature {
     new WhiteNote(WhiteNote.B, 5),
   ];
   private static readonly trebleFlatNotes: WhiteNote[] = [
-    new WhiteNote(WhiteNote.B, 4), new WhiteNote(WhiteNote.E, 5),
-    new WhiteNote(WhiteNote.A, 4), new WhiteNote(WhiteNote.D, 5),
+    new WhiteNote(WhiteNote.B, 5), new WhiteNote(WhiteNote.E, 5),
+    new WhiteNote(WhiteNote.A, 5), new WhiteNote(WhiteNote.D, 5),
     new WhiteNote(WhiteNote.G, 4), new WhiteNote(WhiteNote.C, 5),
     new WhiteNote(WhiteNote.F, 5),
   ];
@@ -53,9 +53,9 @@ export class KeySignature {
     new WhiteNote(WhiteNote.B, 3),
   ];
   private static readonly bassFlatNotes: WhiteNote[] = [
-    new WhiteNote(WhiteNote.B, 3), new WhiteNote(WhiteNote.E, 4),
-    new WhiteNote(WhiteNote.A, 3), new WhiteNote(WhiteNote.D, 4),
-    new WhiteNote(WhiteNote.G, 3), new WhiteNote(WhiteNote.C, 4),
+    new WhiteNote(WhiteNote.B, 3), new WhiteNote(WhiteNote.E, 3),
+    new WhiteNote(WhiteNote.A, 3), new WhiteNote(WhiteNote.D, 3),
+    new WhiteNote(WhiteNote.G, 2), new WhiteNote(WhiteNote.C, 3),
     new WhiteNote(WhiteNote.F, 4),
   ];
 
@@ -167,8 +167,26 @@ export class KeySignature {
     let letter: number;
     if (accid === Accid.Flat) {
       letter = KeySignature.whole_flats[notescale];
-    } else {
+    } else if (accid === Accid.Sharp || accid === Accid.Natural) {
       letter = KeySignature.whole_sharps[notescale];
+    } else {
+      // accid === Accid.None: for black keys, check neighbors to determine
+      // whether to use the flat (upper) or sharp (lower) note letter.
+      // This mirrors the Java GetWhiteNote logic for key-signature notes.
+      letter = KeySignature.whole_sharps[notescale];
+      if (NoteScale.IsBlackKey(notescale) && notenumber > 0 && notenumber + 1 < this.keymap.length) {
+        const prevAccid = this.keymap[notenumber - 1];
+        const nextAccid = this.keymap[notenumber + 1];
+        if (prevAccid === Accid.Natural && nextAccid === Accid.Natural) {
+          letter = this.num_flats > 0
+            ? KeySignature.whole_flats[notescale]
+            : KeySignature.whole_sharps[notescale];
+        } else if (prevAccid === Accid.Natural) {
+          letter = KeySignature.whole_sharps[notescale];
+        } else if (nextAccid === Accid.Natural) {
+          letter = KeySignature.whole_flats[notescale];
+        }
+      }
     }
 
     // Special cases for G-flat major
