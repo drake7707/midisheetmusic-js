@@ -316,23 +316,26 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
 // ---- keyboard shortcuts ----
 function onKeyDown(evt: KeyboardEvent): void {
   if (!hasMidi()) return;
-  // Don't fire shortcuts when the user is typing in an input / select
+  // Don't fire shortcuts when the user is typing in an input/select, or when
+  // a button/link has focus (so Space/Enter don't double-trigger UI elements).
   const tag = (evt.target as HTMLElement)?.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A') return;
 
   switch (evt.key) {
     case ' ':
       evt.preventDefault();
       isPlaying() ? pause() : play();
       break;
+    // Arrow left/right: move one note at a time
     case 'ArrowLeft':
       evt.preventDefault();
-      rewind();
+      player.PrevNote();
       break;
     case 'ArrowRight':
       evt.preventDefault();
-      fastForward();
+      player.NextNote();
       break;
+    // Arrow up/down: adjust playback speed
     case 'ArrowUp':
       evt.preventDefault();
       player.SpeedUp();
@@ -344,6 +347,15 @@ function onKeyDown(evt: KeyboardEvent): void {
       player.SpeedDown();
       speedPct.value = player.getSpeedPercent();
       if (currentFileHash && options.value) saveSettingsToStorage(currentFileHash, options.value, speedPct.value);
+      break;
+    // Page up/down: move one measure at a time
+    case 'PageUp':
+      evt.preventDefault();
+      rewind();
+      break;
+    case 'PageDown':
+      evt.preventDefault();
+      fastForward();
       break;
     case 'r':
     case 'R':

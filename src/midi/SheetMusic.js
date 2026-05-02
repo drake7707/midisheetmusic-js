@@ -62,7 +62,6 @@ class TimeSigSymbol {
 export class SheetMusic {
     staffs;
     mainkey;
-    filename;
     numtracks;
     scrollVert;
     showNoteLetters = 0;
@@ -73,7 +72,6 @@ export class SheetMusic {
     sheetheight = 0;
     pageWidth = PageWidth;
     constructor(file, options) {
-        this.filename = file.getFileName();
         this.scrollVert = options.scrollVert;
         this.showNoteLetters = options.showNoteLetters;
         this.shade1 = options.shade1Color;
