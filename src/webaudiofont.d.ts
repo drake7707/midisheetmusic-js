@@ -75,4 +75,9 @@ interface WafPlayer {
   cancelQueue(ctx: AudioContext): void;
 }
 
+/**
+ * Global WebAudioFont player class, registered by the WebAudioFontPlayer.js
+ * script loaded in index.html. Instrument presets are also loaded as global
+ * script-tag injections and accessed by their variable name from `window`.
+ */
 declare var WebAudioFontPlayer: new () => WafPlayer;

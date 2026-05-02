@@ -512,7 +512,7 @@ export class MidiPlayer {
         if (isDrumTrack) {
           const drumInfo = this.wafDrumPresets.get(note.getNumber());
           if (!drumInfo) continue;
-          const preset = (window as any)[drumInfo.variable] as WafPreset | undefined;
+          const preset = (window as unknown as Record<string, WafPreset | undefined>)[drumInfo.variable];
           if (!preset) continue;
           try {
             player.queueWaveTable(ctx, dest, preset, when, drumInfo.pitch, durSec, 0.5);
@@ -520,7 +520,7 @@ export class MidiPlayer {
         } else {
           const variable = this.wafInstrPresets.get(prog);
           if (!variable) continue;
-          const preset = (window as any)[variable] as WafPreset | undefined;
+          const preset = (window as unknown as Record<string, WafPreset | undefined>)[variable];
           if (!preset) continue;
           try {
             player.queueWaveTable(ctx, dest, preset, when, note.getNumber(), durSec, 0.7);
