@@ -38,11 +38,13 @@ jobs:
       - name: Build
         run: npm run build
         
-      - name: Delete old artifacts
+      - name: Delete github-pages artifact
         uses: geekyeggo/delete-artifact@v2
         with:
-          name: github-pages
-          
+           name: github-pages
+           useGlob: true
+           failOnError: false  # Changed from true to false
+    
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
