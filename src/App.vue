@@ -43,6 +43,13 @@ function stopPolling() {
 }
 
 // ---- file loading ----
+
+/** Returns the current sheet-view container width, falling back to the window
+ *  width if the view is not yet mounted (e.g. on the very first file load). */
+function getSheetPageWidth(): number {
+  return sheetViewRef.value?.viewportWidth() ?? window.innerWidth;
+}
+
 async function onFileChange(evt: Event) {
   const input = evt.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -58,8 +65,7 @@ async function loadFile(file: File) {
     const midi = new MidiFile(buf, file.name);
     const opts = createDefaultOptions(midi, InstrumentAbbreviations);
     // Use the actual container width so the vertical-scroll layout fills the screen.
-    // sheetViewRef.value is available when reloading; for the first load use the window width.
-    opts.pageWidth = sheetViewRef.value?.viewportWidth() ?? document.documentElement.clientWidth;
+    opts.pageWidth = getSheetPageWidth();
     const s    = new SheetMusic(midi, opts);
     const p    = new Piano();
     p.init(window.innerWidth);
@@ -111,7 +117,7 @@ async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
     prog => prog < InstrumentAbbreviations.length ? InstrumentAbbreviations[prog] : `Prog.${prog}`,
   );
   // Carry through the current container width so vertical-scroll layout stays full-width.
-  const currentPageWidth = sheetViewRef.value?.viewportWidth() ?? newOpts.pageWidth;
+  const currentPageWidth = getSheetPageWidth();
   const opts = { ...newOpts, trackInstrumentNames: updatedNames, pageWidth: currentPageWidth };
 
   const wasPlaying = player.isPlaying();

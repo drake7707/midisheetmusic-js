@@ -50,7 +50,10 @@ function resizeCanvas(): void {
   }
 }
 
-/** Draw the full sheet at the current scroll offset, then optionally shade notes. */
+/** Draw the full sheet at the current scroll offset, then optionally shade notes.
+ *  `_prevPulse` is accepted for API compatibility with callers that track both
+ *  pulse times, but is intentionally not forwarded to ShadeNotes — after a full
+ *  Draw there is nothing to unshade (see comment inside). */
 function drawSheet(currentPulse = -1, _prevPulse = -1): void {
   const ctx = getRawCtx();
   if (!ctx || !props.sheet) return;
