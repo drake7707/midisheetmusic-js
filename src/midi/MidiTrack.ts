@@ -68,6 +68,11 @@ export class MidiTrack {
       if (a.getStartTime() !== b.getStartTime()) return a.getStartTime() - b.getStartTime();
       return a.getNumber() - b.getNumber();
     });
+
+    // MIDI channel 9 is always percussion — override any program-change instrument.
+    if (this.notes.some(n => n.getChannel() === 9)) {
+      this.instrument = 128;
+    }
   }
 
   trackNumber(): number { return this.tracknum; }

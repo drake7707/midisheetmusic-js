@@ -500,6 +500,7 @@ export class MidiPlayer {
       if (this.options.mute[trackIdx]) continue;
       const prog       = this.options.instruments[trackIdx] ?? 0;
       const isDrumTrack = prog === 128;
+      const trackVolume = ((this.options.volume?.[trackIdx] ?? 100) / 100);
 
       for (const note of tracks[trackIdx].getNotes()) {
         const noteStart = note.getStartTime();
@@ -515,7 +516,7 @@ export class MidiPlayer {
           const preset = (window as unknown as Record<string, WafPreset | undefined>)[drumInfo.variable];
           if (!preset) continue;
           try {
-            player.queueWaveTable(ctx, dest, preset, when, drumInfo.pitch, durSec, 0.5);
+            player.queueWaveTable(ctx, dest, preset, when, drumInfo.pitch, durSec, 0.5 * trackVolume);
           } catch { /* ignore single-note errors */ }
         } else {
           const variable = this.wafInstrPresets.get(prog);
@@ -523,7 +524,7 @@ export class MidiPlayer {
           const preset = (window as unknown as Record<string, WafPreset | undefined>)[variable];
           if (!preset) continue;
           try {
-            player.queueWaveTable(ctx, dest, preset, when, note.getNumber(), durSec, 0.7);
+            player.queueWaveTable(ctx, dest, preset, when, note.getNumber(), durSec, 0.7 * trackVolume);
           } catch { /* ignore single-note errors */ }
         }
       }

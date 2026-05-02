@@ -42,6 +42,66 @@ function stopPolling() {
   if (pollHandle !== null) { clearInterval(pollHandle); pollHandle = null; }
 }
 
+// ---- settings persistence in localStorage ----
+
+const SETTINGS_PREFIX = 'midioptions_v1_';
+
+/** Compute a simple hash of the MIDI file bytes for use as a storage key. */
+function computeFileHash(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  // djb2-style hash over the full file
+  let hash = 5381;
+  for (let i = 0; i < bytes.length; i++) {
+    hash = ((hash << 5) + hash) ^ bytes[i];
+    hash = hash >>> 0; // keep as 32-bit unsigned
+  }
+  return hash.toString(16);
+}
+
+/** Fields of MidiOptions that should be persisted across sessions. */
+const PERSISTED_FIELDS: (keyof MidiOptions)[] = [
+  'tempo', 'instruments', 'mute', 'tracks', 'transpose', 'combineInterval',
+  'twoStaffs', 'shifttime', 'useDefaultInstruments', 'volume', 'trackOctaveShift',
+  'showMeasures', 'showBeatMarkers', 'showTrackLabels', 'scrollVert',
+  'playMeasuresInLoop', 'playMeasuresInLoopStart', 'playMeasuresInLoopEnd',
+  'showNoteLetters', 'key', 'showPiano', 'largeNoteSize', 'showLyrics',
+  'shade1Color', 'shade2Color', 'useColors', 'colorAccidentals', 'useFullHeight',
+  'countInMeasures', 'noteColors', 'midiShift',
+];
+
+function saveSettingsToStorage(hash: string, opts: MidiOptions, speed: number): void {
+  try {
+    const saved: Record<string, unknown> = { _speed: speed };
+    for (const key of PERSISTED_FIELDS) {
+      saved[key] = opts[key];
+    }
+    localStorage.setItem(SETTINGS_PREFIX + hash, JSON.stringify(saved));
+  } catch { /* quota exceeded or private mode — ignore */ }
+}
+
+function loadSettingsFromStorage(hash: string, opts: MidiOptions): { opts: MidiOptions; speed: number } | null {
+  try {
+    const raw = localStorage.getItem(SETTINGS_PREFIX + hash);
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Record<string, unknown>;
+    const merged: MidiOptions = { ...opts };
+    for (const key of PERSISTED_FIELDS) {
+      if (key in saved) {
+        // Only apply if the saved value has the same array length (track count)
+        const v = saved[key];
+        const cur = opts[key];
+        if (Array.isArray(cur) && Array.isArray(v) && (v as unknown[]).length !== cur.length) continue;
+        (merged as unknown as Record<string, unknown>)[key] = v;
+      }
+    }
+    const speed = typeof saved._speed === 'number' ? saved._speed : 100;
+    return { opts: merged, speed };
+  } catch { return null; }
+}
+
+/** Hash for the currently loaded MIDI file (used for saving settings). */
+let currentFileHash = '';
+
 // ---- file loading ----
 
 /** Returns the current sheet-view container width, falling back to the window
@@ -62,16 +122,27 @@ async function loadFile(file: File) {
   errorMsg.value = '';
   try {
     const buf  = await file.arrayBuffer();
+    const hash = computeFileHash(buf);
     const midi = new MidiFile(buf, file.name);
-    const opts = createDefaultOptions(midi, InstrumentAbbreviations);
+    let opts = createDefaultOptions(midi, InstrumentAbbreviations);
     // Use the actual container width so the vertical-scroll layout fills the screen.
     opts.pageWidth = getSheetPageWidth();
+
+    // Restore previously saved settings for this file (matched by hash).
+    const saved = loadSettingsFromStorage(hash, opts);
+    if (saved) {
+      opts = { ...saved.opts, pageWidth: getSheetPageWidth() };
+      speedPct.value = saved.speed;
+      player.setSpeedPercent(saved.speed);
+    }
+
     const s    = new SheetMusic(midi, opts);
     const p    = new Piano();
     p.init(window.innerWidth);
     p.SetMidiFile(midi, opts);
     p.SetShadeColors(opts.shade1Color, opts.shade2Color);
 
+    currentFileHash = hash;
     fileName.value = file.name;
     midiFile.value = midi;
     options.value  = opts;
@@ -140,6 +211,7 @@ async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
 // ---- settings apply (from drawer or full page) ----
 /** Called by the quick-access drawer (immediate per-toggle apply). */
 function onDrawerApply(newOpts: MidiOptions) {
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
   rebuildSheet(newOpts);
 }
 
@@ -148,6 +220,7 @@ function onSettingsApply(newOpts: MidiOptions, newSpeed: number) {
   showFullSettings.value = false;
   speedPct.value = newSpeed;
   player.setSpeedPercent(newSpeed);
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, newSpeed);
   rebuildSheet(newOpts);
 }
 
@@ -158,7 +231,9 @@ function toggleTrebleClef() {
   if (!options.value || options.value.tracks.length < 1) return;
   const tracks = [...options.value.tracks];
   tracks[0] = !tracks[0];
-  rebuildSheet({ ...options.value, tracks });
+  const newOpts = { ...options.value, tracks };
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
+  rebuildSheet(newOpts);
 }
 
 /** Toggle bass-clef (left hand) track visibility — toolbar btn_left */
@@ -166,13 +241,17 @@ function toggleBassClef() {
   if (!options.value || options.value.tracks.length < 2) return;
   const tracks = [...options.value.tracks];
   tracks[1] = !tracks[1];
-  rebuildSheet({ ...options.value, tracks });
+  const newOpts = { ...options.value, tracks };
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
+  rebuildSheet(newOpts);
 }
 
 /** Toggle piano keyboard visibility — toolbar btn_piano */
 function togglePiano() {
   if (!options.value) return;
-  rebuildSheet({ ...options.value, showPiano: !options.value.showPiano });
+  const newOpts = { ...options.value, showPiano: !options.value.showPiano };
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
+  rebuildSheet(newOpts);
 }
 
 /** Go back — unload the current MIDI file */
