@@ -34,28 +34,19 @@ export class TimeSignature {
 
   /**
    * Convert a pulse duration to the closest NoteDuration enum value.
+   * Uses the same integer-fraction thresholds as the Java implementation.
    */
   GetNoteDuration(duration: number): NoteDuration {
-    const whole         = this.quarter * 4;
-    const half          = this.quarter * 2;
-    const dottedHalf    = this.quarter * 3;
-    const quarter       = this.quarter;
-    const dottedQuarter = Math.round(this.quarter * 3 / 2);
-    const eighth        = Math.round(this.quarter / 2);
-    const dottedEighth  = Math.round(this.quarter * 3 / 4);
-    const sixteenth     = Math.round(this.quarter / 4);
-    const thirtySecond  = Math.round(this.quarter / 8);
-    const triplet       = Math.round(this.quarter * 2 / 3);
-
-    if (duration >= whole - sixteenth)            return NoteDuration.Whole;
-    if (duration >= dottedHalf - sixteenth)       return NoteDuration.DottedHalf;
-    if (duration >= half - sixteenth)             return NoteDuration.Half;
-    if (duration >= dottedQuarter - sixteenth)    return NoteDuration.DottedQuarter;
-    if (duration >= quarter - sixteenth)          return NoteDuration.Quarter;
-    if (duration >= triplet - (thirtySecond))     return NoteDuration.Triplet;
-    if (duration >= dottedEighth - thirtySecond)  return NoteDuration.DottedEighth;
-    if (duration >= eighth - thirtySecond)        return NoteDuration.Eighth;
-    if (duration >= sixteenth - thirtySecond)     return NoteDuration.Sixteenth;
+    const whole = this.quarter * 4;
+    if (duration >= 28 * whole / 32) return NoteDuration.Whole;
+    if (duration >= 20 * whole / 32) return NoteDuration.DottedHalf;
+    if (duration >= 14 * whole / 32) return NoteDuration.Half;
+    if (duration >= 10 * whole / 32) return NoteDuration.DottedQuarter;
+    if (duration >=  7 * whole / 32) return NoteDuration.Quarter;
+    if (duration >=  5 * whole / 32) return NoteDuration.DottedEighth;
+    if (duration >=  6 * whole / 64) return NoteDuration.Eighth;
+    if (duration >=  5 * whole / 64) return NoteDuration.Triplet;
+    if (duration >=  3 * whole / 64) return NoteDuration.Sixteenth;
     return NoteDuration.ThirtySecond;
   }
 
@@ -83,7 +74,7 @@ export class TimeSignature {
       case NoteDuration.Half:          return this.quarter * 2;
       case NoteDuration.DottedQuarter: return Math.round(this.quarter * 3 / 2);
       case NoteDuration.Quarter:       return this.quarter;
-      case NoteDuration.Triplet:       return Math.round(this.quarter * 2 / 3);
+      case NoteDuration.Triplet:       return Math.floor(this.quarter / 3);
       case NoteDuration.DottedEighth:  return Math.round(this.quarter * 3 / 4);
       case NoteDuration.Eighth:        return eighth;
       case NoteDuration.Sixteenth:     return sixteenth;
@@ -93,21 +84,29 @@ export class TimeSignature {
   }
 
   /**
-   * Align a note start time to the nearest 32nd-note grid boundary.
+   * Align a note start time to the nearest sixteenth-note grid boundary
+   * (using floor division, matching the Java implementation).
    */
   alignNote(startTime: number): number {
-    const thirtySecond = Math.round(this.quarter / 8);
-    if (thirtySecond <= 0) return startTime;
-    return Math.round(startTime / thirtySecond) * thirtySecond;
+    const sixteenth = Math.floor(this.quarter / 4);
+    if (sixteenth <= 0) return startTime;
+    return Math.floor(startTime / sixteenth) * sixteenth;
   }
 
   /**
    * Return the beat position within the current measure as a float.
    * A value of 0.0 means the start of the measure; 1.0 means the second beat, etc.
+   * Uses the same beat unit as the Java implementation (accounts for denominator).
    */
   getBeatInMeasure(startTime: number): number {
+    let beat: number;
+    if (this.denominator < 4) {
+      beat = this.quarter * 2;
+    } else {
+      beat = Math.floor(this.quarter / (this.denominator / 4));
+    }
     const posInMeasure = startTime % this.measure;
-    return posInMeasure / this.quarter;
+    return posInMeasure / beat;
   }
 
   toString(): string {

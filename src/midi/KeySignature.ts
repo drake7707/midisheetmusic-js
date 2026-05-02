@@ -37,26 +37,22 @@ export class KeySignature {
   private static readonly trebleSharpNotes: WhiteNote[] = [
     new WhiteNote(WhiteNote.F, 5), new WhiteNote(WhiteNote.C, 5),
     new WhiteNote(WhiteNote.G, 5), new WhiteNote(WhiteNote.D, 5),
-    new WhiteNote(WhiteNote.A, 5), new WhiteNote(WhiteNote.E, 5),
-    new WhiteNote(WhiteNote.B, 5),
+    new WhiteNote(WhiteNote.A, 6), new WhiteNote(WhiteNote.E, 5),
   ];
   private static readonly trebleFlatNotes: WhiteNote[] = [
     new WhiteNote(WhiteNote.B, 5), new WhiteNote(WhiteNote.E, 5),
     new WhiteNote(WhiteNote.A, 5), new WhiteNote(WhiteNote.D, 5),
     new WhiteNote(WhiteNote.G, 4), new WhiteNote(WhiteNote.C, 5),
-    new WhiteNote(WhiteNote.F, 5),
   ];
   private static readonly bassSharpNotes: WhiteNote[] = [
     new WhiteNote(WhiteNote.F, 3), new WhiteNote(WhiteNote.C, 3),
     new WhiteNote(WhiteNote.G, 3), new WhiteNote(WhiteNote.D, 3),
     new WhiteNote(WhiteNote.A, 4), new WhiteNote(WhiteNote.E, 3),
-    new WhiteNote(WhiteNote.B, 3),
   ];
   private static readonly bassFlatNotes: WhiteNote[] = [
     new WhiteNote(WhiteNote.B, 3), new WhiteNote(WhiteNote.E, 3),
     new WhiteNote(WhiteNote.A, 3), new WhiteNote(WhiteNote.D, 3),
     new WhiteNote(WhiteNote.G, 2), new WhiteNote(WhiteNote.C, 3),
-    new WhiteNote(WhiteNote.F, 4),
   ];
 
   /** whole_sharps[notescale] → white note letter when using sharps notation */
@@ -286,7 +282,7 @@ export class KeySignature {
     let isBestSharp = true;
     let smallestAccidCount = notenums.length + 1;
 
-    for (let key = 0; key < KeySignature.sharpkeys!.length; key++) {
+    for (let key = 0; key < 6; key++) {
       let count = 0;
       for (let n = 0; n < 12; n++) {
         if (KeySignature.sharpkeys![key][n] !== Accid.None) count += notecount[n];
@@ -297,7 +293,7 @@ export class KeySignature {
         isBestSharp = true;
       }
     }
-    for (let key = 0; key < KeySignature.flatkeys!.length; key++) {
+    for (let key = 0; key < 7; key++) {
       let count = 0;
       for (let n = 0; n < 12; n++) {
         if (KeySignature.flatkeys![key][n] !== Accid.None) count += notecount[n];
