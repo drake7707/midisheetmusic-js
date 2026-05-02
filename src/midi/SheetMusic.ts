@@ -86,6 +86,7 @@ export class SheetMusic implements ISheetMusic {
   private shade2: number;
   private sheetwidth: number  = 0;
   private sheetheight: number = 0;
+  private pageWidth: number = PageWidth;
 
   constructor(file: MidiFile, options: MidiOptions) {
     this.filename = file.getFileName();
@@ -93,6 +94,7 @@ export class SheetMusic implements ISheetMusic {
     this.showNoteLetters = options.showNoteLetters;
     this.shade1 = options.shade1Color;
     this.shade2 = options.shade2Color;
+    this.pageWidth = options.pageWidth ?? PageWidth;
 
     // Build NoteColors (12 per chromatic scale)
     this.NoteColors = new Array(12).fill(0);
@@ -613,7 +615,7 @@ export class SheetMusic implements ISheetMusic {
     while (startindex < symbols.length) {
       let endindex = startindex;
       let width = keysigWidth;
-      const maxwidth = this.scrollVert ? PageWidth : 2_000_000;
+      const maxwidth = this.scrollVert ? this.pageWidth : 2_000_000;
 
       while (endindex < symbols.length && width + symbols[endindex].getWidth() < maxwidth) {
         width += symbols[endindex].getWidth();
@@ -635,9 +637,9 @@ export class SheetMusic implements ISheetMusic {
         }
       }
 
-      if (this.scrollVert) width = PageWidth;
+      if (this.scrollVert) width = this.pageWidth;
       const staffSymbols: MusicSymbol[] = symbols.slice(startindex, endindex + 1);
-      thestaffs.push(new Staff(staffSymbols, key, options, track, totaltracks, originalTrackNum));
+      thestaffs.push(new Staff(staffSymbols, key, options, track, totaltracks, originalTrackNum, this.pageWidth));
       startindex = endindex + 1;
     }
     return thestaffs;

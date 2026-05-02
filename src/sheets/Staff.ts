@@ -40,6 +40,7 @@ export class Staff {
   private beatInterval: number;
   private options: MidiOptions;
   private swingLabel: string | null = null;
+  private pageWidth: number;
 
   constructor(
     symbols: MusicSymbol[],
@@ -47,7 +48,8 @@ export class Staff {
     options: MidiOptions,
     tracknum: number,
     totaltracks: number,
-    originalTrackNum: number
+    originalTrackNum: number,
+    pageWidth: number = PageWidth,
   ) {
     this.keysigWidth   = KeySignatureWidth(key);
     this.tracknum      = tracknum;
@@ -55,6 +57,7 @@ export class Staff {
     this.showMeasures  = options.showMeasures && tracknum === 0;
     this.showBeatMarkers = options.showBeatMarkers && tracknum === 0;
     this.showTrackLabels = options.showTrackLabels;
+    this.pageWidth     = pageWidth;
     if (
       this.showTrackLabels && options.trackInstrumentNames != null &&
       originalTrackNum >= 0 && originalTrackNum < options.trackInstrumentNames.length
@@ -138,7 +141,7 @@ export class Staff {
   }
 
   private CalculateWidth(scrollVert: boolean): void {
-    if (scrollVert) { this.width = PageWidth; return; }
+    if (scrollVert) { this.width = this.pageWidth; return; }
     this.width = this.keysigWidth;
     for (const s of this.symbols) this.width += s.getWidth();
   }
@@ -157,7 +160,7 @@ export class Staff {
   }
 
   private FullJustify(): void {
-    if (this.width !== PageWidth) return;
+    if (this.width !== this.pageWidth) return;
     let totalwidth = this.keysigWidth, totalsymbols = 0, i = 0;
     while (i < this.symbols.length) {
       const start = this.symbols[i].getStartTime();
@@ -169,7 +172,7 @@ export class Staff {
         i++;
       }
     }
-    let extrawidth = Math.floor((PageWidth - totalwidth - 1) / totalsymbols);
+    let extrawidth = Math.floor((this.pageWidth - totalwidth - 1) / totalsymbols);
     if (extrawidth > NoteHeight * 2) extrawidth = NoteHeight * 2;
     i = 0;
     while (i < this.symbols.length) {
