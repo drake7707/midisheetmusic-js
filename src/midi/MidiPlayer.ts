@@ -1,6 +1,6 @@
 /**
  * MidiPlayer.ts — TypeScript port of MidiPlayer.java
- * Plays MIDI files using the Web Audio API + soundfont-player (GM instruments)
+ * Plays MIDI files using the Web Audio API + WebAudioFont (GM instruments)
  * for audio output and handles play/pause/stop/rewind/fastforward, note
  * shading, and speed control.
  */
@@ -10,53 +10,6 @@ import type { MidiOptions } from '@/midi/MidiFile';
 import type { SheetMusic } from '@/midi/SheetMusic';
 import type { Piano } from '@/midi/Piano';
 import { ImmediateScroll, GradualScroll, DontScroll } from '@/midi/SheetMusic';
-import type { Player as SFPlayer } from 'soundfont-player';
-// soundfont-player is a CommonJS module; import via the bundler's interop
-import Soundfont from 'soundfont-player';
-
-/**
- * Standard GM program-number (0-based) → soundfont-player instrument name.
- * https://www.midi.org/specifications-old/item/gm-level-1-sound-set
- */
-const GM_INSTRUMENT_NAMES: string[] = [
-  'acoustic_grand_piano', 'bright_acoustic_piano', 'electric_grand_piano',
-  'honkytonk_piano', 'electric_piano_1', 'electric_piano_2',
-  'harpsichord', 'clavinet', 'celesta', 'glockenspiel', 'music_box',
-  'vibraphone', 'marimba', 'xylophone', 'tubular_bells', 'dulcimer',
-  'drawbar_organ', 'percussive_organ', 'rock_organ', 'church_organ',
-  'reed_organ', 'accordion', 'harmonica', 'tango_accordion',
-  'acoustic_guitar_nylon', 'acoustic_guitar_steel', 'electric_guitar_jazz',
-  'electric_guitar_clean', 'electric_guitar_muted', 'overdriven_guitar',
-  'distortion_guitar', 'guitar_harmonics',
-  'acoustic_bass', 'electric_bass_finger', 'electric_bass_pick',
-  'fretless_bass', 'slap_bass_1', 'slap_bass_2', 'synth_bass_1', 'synth_bass_2',
-  'violin', 'viola', 'cello', 'contrabass', 'tremolo_strings',
-  'pizzicato_strings', 'orchestral_harp', 'timpani',
-  'string_ensemble_1', 'string_ensemble_2', 'synth_strings_1', 'synth_strings_2',
-  'choir_aahs', 'voice_oohs', 'synth_choir', 'orchestra_hit',
-  'trumpet', 'trombone', 'tuba', 'muted_trumpet', 'french_horn',
-  'brass_section', 'synth_brass_1', 'synth_brass_2',
-  'soprano_sax', 'alto_sax', 'tenor_sax', 'baritone_sax',
-  'oboe', 'english_horn', 'bassoon', 'clarinet',
-  'piccolo', 'flute', 'recorder', 'pan_flute', 'blown_bottle',
-  'shakuhachi', 'whistle', 'ocarina',
-  'lead_1_square', 'lead_2_sawtooth', 'lead_3_calliope', 'lead_4_chiff',
-  'lead_5_charang', 'lead_6_voice', 'lead_7_fifths', 'lead_8_bass__lead',
-  'pad_1_new_age', 'pad_2_warm', 'pad_3_polysynth', 'pad_4_choir',
-  'pad_5_bowed', 'pad_6_metallic', 'pad_7_halo', 'pad_8_sweep',
-  'fx_1_rain', 'fx_2_soundtrack', 'fx_3_crystal', 'fx_4_atmosphere',
-  'fx_5_brightness', 'fx_6_goblins', 'fx_7_echoes', 'fx_8_scifi',
-  'sitar', 'banjo', 'shamisen', 'koto', 'kalimba', 'bagpipe',
-  'fiddle', 'shanai',
-  'tinkle_bell', 'agogo', 'steel_drums', 'woodblock', 'taiko_drum',
-  'melodic_tom', 'synth_drum', 'reverse_cymbal',
-  'guitar_fret_noise', 'breath_noise', 'seashore', 'bird_tweet',
-  'telephone_ring', 'helicopter', 'applause', 'gunshot',
-];
-
-/** MusyngKite is the default soundfont; FluidR3_GM is the alternative. */
-const SF_SOUNDFONT = 'MusyngKite';
-const SF_FORMAT    = 'mp3';
 
 export const PlayerState = {
   Stopped:   1,
@@ -77,15 +30,22 @@ export class MidiPlayer {
 
   playstate: PlayerStateValue = PlayerState.Stopped;
 
-  // ---- Audio (soundfont-player + Web Audio API) ----
-  private sfAudioCtx:  AudioContext | null = null;
-  /** program-number → loaded soundfont Player */
-  private sfPlayers:   Map<number, SFPlayer> = new Map();
+  // ---- Audio (WebAudioFont + Web Audio API) ----
+  /** Shared AudioContext – created once, never closed while the player lives. */
+  private wafAudioCtx:  AudioContext | null = null;
+  /** WebAudioFont player instance – created once per AudioContext. */
+  private wafPlayer:    WafPlayer    | null = null;
+  /** WebAudioFont channel (EQ + routing) used as the audio destination. */
+  private wafChannel:   WafChannel   | null = null;
+  /** GM program number (0-based) → WAF global variable name for that preset. */
+  private wafInstrPresets: Map<number, string> = new Map();
+  /** Drum MIDI note number → { variable name, natural pitch } for that hit. */
+  private wafDrumPresets:  Map<number, { variable: string; pitch: number }> = new Map();
   /** audioCtx.currentTime reference for the start of scheduled playback */
-  private sfAudioStart: number = 0;
+  private wafAudioStart: number = 0;
   /** Chain of instrument-loading promises – always resolves, never rejects */
-  private sfLoadingPromise: Promise<void> = Promise.resolve();
-  /** True while soundfont instruments are being fetched from the CDN. */
+  private wafLoadingPromise: Promise<void> = Promise.resolve();
+  /** True while WebAudioFont instrument presets are being fetched. */
   private _loadingInstruments = false;
 
   private startTime:       number = 0;       // performance.now() when playback started
@@ -288,13 +248,13 @@ export class MidiPlayer {
   cleanup(): void {
     this.clearTimer();
     this.clearPendingPlay();
-    this.disposeSoundfontAudio();
-    if (this.sfAudioCtx) {
-      this.sfAudioCtx.close();
-      this.sfAudioCtx = null;
-    }
-    this.sfPlayers.clear();
-    this.sfLoadingPromise = Promise.resolve();
+    this.stopAudio();
+    // Reset per-file preset caches; the AudioContext/WafPlayer are kept alive
+    // so that already-decoded instrument buffers remain valid for reuse.
+    this.wafInstrPresets.clear();
+    this.wafDrumPresets.clear();
+    this.wafLoadingPromise = Promise.resolve();
+    this._loadingInstruments = false;
     if (this.audioCtx) {
       this.audioCtx.close();
       this.audioCtx = null;
@@ -355,7 +315,7 @@ export class MidiPlayer {
     }
 
     // Compute tempo / pulsesPerMsec and ensure AudioContext exists.
-    // Also enqueues instrument loading onto sfLoadingPromise.
+    // Also enqueues instrument loading onto wafLoadingPromise.
     this.createMidiAudio();
 
     // Set Playing state immediately so the UI shows the correct button state
@@ -364,9 +324,9 @@ export class MidiPlayer {
     // should only advance once everything is ready to play.
     this.playstate = PlayerState.Playing;
 
-    // Wait for all required soundfont instruments to finish loading before
+    // Wait for all required WebAudioFont instruments to finish loading before
     // starting visual or audio playback.
-    await this.sfLoadingPromise;
+    await this.wafLoadingPromise;
 
     // The user may have paused/stopped while instruments were loading, or
     // SetMidiFile may have been called with new options (which resets the player).
@@ -443,98 +403,137 @@ export class MidiPlayer {
     this.options.tempo = Math.round(1.0 / inverseTmpoScaled);
     this.pulsesPerMsec = this.midifile.getTime().getQuarter() * (1000.0 / this.options.tempo);
 
-    // Ensure we have an AudioContext
-    if (!this.sfAudioCtx) {
-      try { this.sfAudioCtx = new AudioContext(); } catch { return; }
+    // Lazily create the shared AudioContext and WebAudioFont player.
+    if (!this.wafAudioCtx) {
+      try { this.wafAudioCtx = new AudioContext(); } catch { return; }
     }
-    if (this.sfAudioCtx.state === 'suspended') {
-      this.sfAudioCtx.resume().catch(() => {});
+    if (!this.wafPlayer) {
+      try {
+        this.wafPlayer  = new WebAudioFontPlayer();
+        this.wafChannel = this.wafPlayer.createChannel(this.wafAudioCtx);
+        this.wafChannel.output.connect(this.wafAudioCtx.destination);
+      } catch { return; }
+    }
+    if (this.wafAudioCtx.state === 'suspended') {
+      this.wafAudioCtx.resume().catch(() => {});
     }
 
-    // Collect the program numbers required by non-muted tracks.
+    // Collect GM program numbers and (for drums) individual note numbers used
+    // by non-muted tracks so we know exactly which presets to pre-load.
     const tracks = this.midifile.ChangeMidiNotes(this.options);
-    const progNums = new Set<number>();
+    const melodicProgs = new Set<number>();
+    const drumNotes    = new Set<number>();
     for (let i = 0; i < tracks.length; i++) {
-      if (!this.options.mute[i]) progNums.add(this.options.instruments[i] ?? 0);
+      if (this.options.mute[i]) continue;
+      const prog = this.options.instruments[i] ?? 0;
+      if (prog === 128) {
+        for (const note of tracks[i].getNotes()) {
+          drumNotes.add(note.getNumber());
+        }
+      } else {
+        melodicProgs.add(prog);
+      }
     }
 
-    // Chain instrument loading onto sfLoadingPromise so that doPlay() can
+    // Chain instrument loading onto wafLoadingPromise so that doPlay() can
     // await the entire chain before scheduling Web Audio API notes.
-    // Using a chain (rather than a flag) guarantees that a new instrument
-    // selected after a previous load has already started will still be loaded
-    // before playback begins.
-    this.sfLoadingPromise = this.sfLoadingPromise.then(() =>
-      this.loadSoundfontInstruments(progNums)
+    this.wafLoadingPromise = this.wafLoadingPromise.then(() =>
+      this.loadWafInstruments(melodicProgs, drumNotes)
     );
   }
 
-  /** Async: load any soundfont instruments not yet in sfPlayers. */
-  private async loadSoundfontInstruments(progNums: Set<number>): Promise<void> {
-    if (!this.sfAudioCtx) return;
-    const ac = this.sfAudioCtx;
-    const missing = [...progNums].filter(p => !this.sfPlayers.has(p));
-    if (missing.length === 0) return;
+  /** Async: load any WebAudioFont presets not yet cached in the global window scope. */
+  private async loadWafInstruments(melodicProgs: Set<number>, drumNotes: Set<number>): Promise<void> {
+    if (!this.wafAudioCtx || !this.wafPlayer) return;
+    const ctx    = this.wafAudioCtx;
+    const player = this.wafPlayer;
+
+    // Collect presets that still need to be started via script injection.
+    let anyNew = false;
+
+    for (const prog of melodicProgs) {
+      if (this.wafInstrPresets.has(prog)) continue;
+      const idx  = player.loader.findInstrument(prog);
+      const info = player.loader.instrumentInfo(idx);
+      this.wafInstrPresets.set(prog, info.variable);
+      player.loader.startLoad(ctx, info.url, info.variable);
+      anyNew = true;
+    }
+
+    for (const note of drumNotes) {
+      if (this.wafDrumPresets.has(note)) continue;
+      const idx  = player.loader.findDrum(note);
+      const info = player.loader.drumInfo(idx);
+      this.wafDrumPresets.set(note, { variable: info.variable, pitch: info.pitch });
+      player.loader.startLoad(ctx, info.url, info.variable);
+      anyNew = true;
+    }
+
+    if (!anyNew) return;
+
     this._loadingInstruments = true;
     try {
-      for (const prog of missing) {
-        const sfName = (GM_INSTRUMENT_NAMES[prog] ?? 'acoustic_grand_piano') as import('soundfont-player').InstrumentName;
-        try {
-          const player = await Soundfont.instrument(ac, sfName, { soundfont: SF_SOUNDFONT, format: SF_FORMAT });
-          this.sfPlayers.set(prog, player);
-        } catch {
-          // If CDN is unreachable, leave this instrument slot empty (silence for that instrument)
-        }
-      }
+      await new Promise<void>((resolve) => player.loader.waitLoad(resolve));
     } finally {
       this._loadingInstruments = false;
     }
   }
 
-  private disposeSoundfontAudio(): void {
-    // Stop all currently tracked notes in all loaded players
-    for (const player of this.sfPlayers.values()) {
-      try { player.stop(0); } catch { /* ignore */ }
-    }
-  }
-
   private playAudio(): void {
-    if (!this.midifile || !this.options || !this.sfAudioCtx) return;
-    const ac = this.sfAudioCtx;
-    if (ac.state === 'suspended') {
-      ac.resume().catch(() => {});
-    }
+    if (!this.midifile || !this.options || !this.wafAudioCtx || !this.wafPlayer || !this.wafChannel) return;
+    const ctx    = this.wafAudioCtx;
+    const player = this.wafPlayer;
+    const dest   = this.wafChannel.input;
+
+    player.resumeContext(ctx);
 
     // Tiny look-ahead so the very first notes are not clipped by buffer latency.
     // Offset startTime by the same amount so visual and audio stay in sync.
     const LOOKAHEAD_SEC = 0.05;
-    this.sfAudioStart = ac.currentTime + LOOKAHEAD_SEC;
-    this.startTime    = performance.now() + LOOKAHEAD_SEC * 1000;
+    this.wafAudioStart = ctx.currentTime + LOOKAHEAD_SEC;
+    this.startTime     = performance.now() + LOOKAHEAD_SEC * 1000;
 
     const tracks = this.midifile.ChangeMidiNotes(this.options);
     const pulsesPerSec = this.pulsesPerMsec * 1000;
 
     for (let trackIdx = 0; trackIdx < tracks.length; trackIdx++) {
       if (this.options.mute[trackIdx]) continue;
-      const prog = this.options.instruments[trackIdx] ?? 0;
-      const player = this.sfPlayers.get(prog);
-      if (!player) continue; // instrument not loaded yet – silent for this track
+      const prog       = this.options.instruments[trackIdx] ?? 0;
+      const isDrumTrack = prog === 128;
 
-      const notes = tracks[trackIdx].getNotes();
-      for (const note of notes) {
+      for (const note of tracks[trackIdx].getNotes()) {
         const noteStart = note.getStartTime();
         if (noteStart < this.startPulseTime) continue;
+
         const startSec = (noteStart - this.startPulseTime) / pulsesPerSec;
         const durSec   = Math.max(0.05, note.getDuration() / pulsesPerSec);
-        const when     = this.sfAudioStart + startSec;
-        try {
-          player.play(String(note.getNumber()), when, { duration: durSec, gain: 0.7 });
-        } catch { /* ignore single-note errors */ }
+        const when     = this.wafAudioStart + startSec;
+
+        if (isDrumTrack) {
+          const drumInfo = this.wafDrumPresets.get(note.getNumber());
+          if (!drumInfo) continue;
+          const preset = (window as unknown as Record<string, WafPreset | undefined>)[drumInfo.variable];
+          if (!preset) continue;
+          try {
+            player.queueWaveTable(ctx, dest, preset, when, drumInfo.pitch, durSec, 0.5);
+          } catch { /* ignore single-note errors */ }
+        } else {
+          const variable = this.wafInstrPresets.get(prog);
+          if (!variable) continue;
+          const preset = (window as unknown as Record<string, WafPreset | undefined>)[variable];
+          if (!preset) continue;
+          try {
+            player.queueWaveTable(ctx, dest, preset, when, note.getNumber(), durSec, 0.7);
+          } catch { /* ignore single-note errors */ }
+        }
       }
     }
   }
 
   private stopAudio(): void {
-    this.disposeSoundfontAudio();
+    if (this.wafAudioCtx && this.wafPlayer) {
+      this.wafPlayer.cancelQueue(this.wafAudioCtx);
+    }
   }
 
   private timerCallback(): void {
@@ -590,7 +589,7 @@ export class MidiPlayer {
     this.clearTimer();
     this.removeShading();
     this.scrollToStart();
-    this.disposeSoundfontAudio();
+    this.stopAudio();
   }
 
   private removeShading(): void {
