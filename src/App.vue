@@ -46,15 +46,18 @@ function stopPolling() {
 
 const SETTINGS_PREFIX = 'midioptions_v1_';
 
-/** Compute a simple hash of the MIDI file bytes for use as a storage key. */
+/** Compute a simple hash of the MIDI file bytes for use as a storage key.
+ *  Hashes the first 4 KB of the file plus its total size for speed on large files. */
 function computeFileHash(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  // djb2-style hash over the full file
+  const bytes = new Uint8Array(buf, 0, Math.min(buf.byteLength, 4096));
+  // djb2-style hash
   let hash = 5381;
   for (let i = 0; i < bytes.length; i++) {
     hash = ((hash << 5) + hash) ^ bytes[i];
     hash = hash >>> 0; // keep as 32-bit unsigned
   }
+  // XOR in the file size so files with the same first 4 KB are still distinguished
+  hash = (hash ^ buf.byteLength) >>> 0;
   return hash.toString(16);
 }
 
