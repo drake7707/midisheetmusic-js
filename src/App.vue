@@ -57,6 +57,9 @@ async function loadFile(file: File) {
     const buf  = await file.arrayBuffer();
     const midi = new MidiFile(buf, file.name);
     const opts = createDefaultOptions(midi, InstrumentAbbreviations);
+    // Use the actual container width so the vertical-scroll layout fills the screen.
+    // sheetViewRef.value is available when reloading; for the first load use the window width.
+    opts.pageWidth = sheetViewRef.value?.viewportWidth() ?? document.documentElement.clientWidth;
     const s    = new SheetMusic(midi, opts);
     const p    = new Piano();
     p.init(window.innerWidth);
@@ -107,7 +110,9 @@ async function rebuildSheet(newOpts: MidiOptions): Promise<void> {
   const updatedNames = newOpts.instruments.map(
     prog => prog < InstrumentAbbreviations.length ? InstrumentAbbreviations[prog] : `Prog.${prog}`,
   );
-  const opts = { ...newOpts, trackInstrumentNames: updatedNames };
+  // Carry through the current container width so vertical-scroll layout stays full-width.
+  const currentPageWidth = sheetViewRef.value?.viewportWidth() ?? newOpts.pageWidth;
+  const opts = { ...newOpts, trackInstrumentNames: updatedNames, pageWidth: currentPageWidth };
 
   const wasPlaying = player.isPlaying();
   if (wasPlaying) player.Pause();

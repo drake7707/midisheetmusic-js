@@ -51,7 +51,7 @@ function resizeCanvas(): void {
 }
 
 /** Draw the full sheet at the current scroll offset, then optionally shade notes. */
-function drawSheet(currentPulse = -1, prevPulse = -1): void {
+function drawSheet(currentPulse = -1, _prevPulse = -1): void {
   const ctx = getRawCtx();
   if (!ctx || !props.sheet) return;
   const s = props.sheet;
@@ -64,7 +64,12 @@ function drawSheet(currentPulse = -1, prevPulse = -1): void {
   try {
     s.Draw(ctx);
     if (currentPulse >= 0) {
-      s.ShadeNotes(ctx, currentPulse, prevPulse);
+      // After a full Draw, there is nothing to "unshade" (Draw already cleared
+      // all previous highlights). Pass -1 as prevPulse so ShadeNotes skips the
+      // "unshade previous note" step and, crucially, bypasses the early-return
+      // optimisation that skips drawing the highlight when both prevPulse and
+      // currentPulse fall within the same note's time range.
+      s.ShadeNotes(ctx, currentPulse, -1);
     }
   } catch (e) {
     emit('drawError', `Canvas draw failed: ${(e as Error).message}`);
@@ -175,7 +180,7 @@ onBeforeUnmount(() => {
   resizeObserver = null;
 });
 
-defineExpose({ getCtx, drawSheet, scrollTo, renderAndScroll });
+defineExpose({ getCtx, drawSheet, scrollTo, renderAndScroll, viewportWidth });
 </script>
 
 <template>

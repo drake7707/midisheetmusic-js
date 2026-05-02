@@ -87,6 +87,9 @@ export interface MidiOptions {
   midiShift: number;
   /** The last measure number in the song (0-based). */
   lastMeasure: number;
+  /** Width in pixels to use for one row of staff in vertical-scroll mode.
+   *  Defaults to the PageWidth constant (800) when not provided. */
+  pageWidth?: number;
 }
 
 export const NoteNameNone           = 0;
