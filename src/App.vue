@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, nextTick, computed } from 'vue';
+import { ref, shallowRef, nextTick, computed, onMounted, onBeforeUnmount } from 'vue';
 import { MidiFile, InstrumentAbbreviations } from '@/midi/MidiFile';
 import type { MidiOptions } from '@/midi/MidiFile';
 import { SheetMusic, createDefaultOptions } from '@/midi/SheetMusic';
@@ -298,8 +298,13 @@ function onDrawError(msg: string) {
   errorMsg.value = msg;
 }
 
-/** Speed display string (3 chars, monospace like the Android txt_speed) */
-const speedDisplay = computed(() => `${speedPct.value}%`);
+/** Speed display: percentage line and BPM line (matches Android two-line txt_speed). */
+const speedPctText = computed(() => `${speedPct.value}%`);
+const speedBpmText = computed(() => {
+  if (!midiFile.value) return '';
+  const tempo = midiFile.value.getTime().getTempo();
+  return `${Math.round(60_000_000 * speedPct.value / (tempo * 100))}bpm`;
+});
 
 /** Whether each track is currently shown (for button active state). */
 const trebleVisible = computed(() => options.value?.tracks[0] ?? true);
@@ -307,6 +312,65 @@ const bassVisible   = computed(() => options.value?.tracks[1] ?? true);
 
 /** Last measure index for loop range clamping */
 const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
+
+// ---- keyboard shortcuts ----
+function onKeyDown(evt: KeyboardEvent): void {
+  if (!hasMidi()) return;
+  // Don't fire shortcuts when the user is typing in an input/select, or when
+  // a button/link has focus (so Space/Enter don't double-trigger UI elements).
+  const tag = (evt.target as HTMLElement)?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A') return;
+
+  switch (evt.key) {
+    case ' ':
+      evt.preventDefault();
+      isPlaying() ? pause() : play();
+      break;
+    // Arrow left/right: move one note at a time
+    case 'ArrowLeft':
+      evt.preventDefault();
+      player.PrevNote();
+      break;
+    case 'ArrowRight':
+      evt.preventDefault();
+      player.NextNote();
+      break;
+    // +/-: adjust playback speed
+    case '+':
+    case '=':
+      evt.preventDefault();
+      player.SpeedUp();
+      speedPct.value = player.getSpeedPercent();
+      if (currentFileHash && options.value) saveSettingsToStorage(currentFileHash, options.value, speedPct.value);
+      break;
+    case '-':
+      evt.preventDefault();
+      player.SpeedDown();
+      speedPct.value = player.getSpeedPercent();
+      if (currentFileHash && options.value) saveSettingsToStorage(currentFileHash, options.value, speedPct.value);
+      break;
+    // Page up/down: move one measure at a time
+    case 'PageUp':
+      evt.preventDefault();
+      rewind();
+      break;
+    case 'PageDown':
+      evt.preventDefault();
+      fastForward();
+      break;
+    case 'r':
+    case 'R':
+      if (!evt.ctrlKey && !evt.metaKey) { evt.preventDefault(); replay(); }
+      break;
+    case 'Home':
+      evt.preventDefault();
+      replay();
+      break;
+  }
+}
+
+onMounted(()       => window.addEventListener('keydown', onKeyDown));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
 </script>
 
 <template>
@@ -354,7 +418,10 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
       <button class="tb-btn" :disabled="!hasMidi()" title="Forward" @click="fastForward">⏭</button>
 
       <!-- txt_speed (monospace, 2-line in Android) -->
-      <span class="txt-speed">{{ speedDisplay }}</span>
+      <span class="txt-speed">
+        <span>{{ speedPctText }}</span>
+        <span v-if="speedBpmText" class="txt-bpm">{{ speedBpmText }}</span>
+      </span>
 
       <!-- speed_bar (weight=1 → flex:1, max=150, progress=100) -->
       <input
@@ -497,15 +564,22 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
 /* Active state (piano, etc.) */
 .tb-btn-active { background: rgba(255,255,255,0.25); }
 
-/* txt_speed: monospace, 2-line in Android — wrap on smaller screens */
+/* txt_speed: monospace, 2-line in Android */
 .txt-speed {
   font-family: monospace;
   font-size: 0.78rem;
   text-align: center;
-  white-space: nowrap;
   flex-shrink: 0;
   padding: 0 4px;
   min-width: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+.txt-bpm {
+  font-size: 0.68rem;
+  opacity: 0.85;
 }
 
 /* speed_bar: weight=1 → flex:1 */

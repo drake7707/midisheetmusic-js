@@ -77,7 +77,6 @@ class TimeSigSymbol implements MusicSymbol {
 export class SheetMusic implements ISheetMusic {
   private staffs: Staff[];
   private mainkey: KeySignature;
-  private filename: string;
   private numtracks: number;
   private scrollVert: boolean;
   private showNoteLetters: number = 0;
@@ -89,7 +88,6 @@ export class SheetMusic implements ISheetMusic {
   private pageWidth: number = PageWidth;
 
   constructor(file: MidiFile, options: MidiOptions) {
-    this.filename = file.getFileName();
     this.scrollVert = options.scrollVert;
     this.showNoteLetters = options.showNoteLetters;
     this.shade1 = options.shade1Color;
@@ -209,11 +207,6 @@ export class SheetMusic implements ISheetMusic {
       ypos += staff.getHeight();
     }
 
-    // Title
-    ctx.font = '14px sans-serif';
-    ctx.fillStyle = colorToCSS(rgb(70, 70, 70));
-    let title = this.filename.replace('.mid', '').replace('.midi', '').replace(/_/g, ' ');
-    ctx.fillText(title, LeftMargin, 14);
     ctx.restore();
   }
 
@@ -829,6 +822,8 @@ export function createDefaultOptions(file: MidiFile, InstrumentAbbreviations: st
     rgb(0, 0, 120), rgb(0, 0, 180), rgb(88, 0, 147), rgb(129, 0, 215),
   ];
 
+  const lastMeasure = Math.floor(file.EndTime() / file.getTime().getMeasure());
+
   return {
     tempo: file.getTime().getTempo(),
     instruments,
@@ -843,19 +838,19 @@ export function createDefaultOptions(file: MidiFile, InstrumentAbbreviations: st
     useDefaultInstruments: true,
     volume,
     trackOctaveShift,
-    showMeasures: false,
+    showMeasures: true,
     showBeatMarkers: false,
     showTrackLabels: true,
     trackInstrumentNames,
     defaultTime: file.getTime(),
-    scrollVert: true,
+    scrollVert: false,
     playMeasuresInLoop: false,
     playMeasuresInLoopStart: 0,
-    playMeasuresInLoopEnd: 0,
+    playMeasuresInLoopEnd: lastMeasure,
     showNoteLetters: 0,
     key: -1,
     showPiano: true,
-    largeNoteSize: false,
+    largeNoteSize: true,
     showLyrics: true,
     shade1Color: rgb(210, 205, 220),
     shade2Color: rgb(150, 200, 220),
@@ -865,6 +860,6 @@ export function createDefaultOptions(file: MidiFile, InstrumentAbbreviations: st
     countInMeasures: 0,
     noteColors,
     midiShift: 0,
-    lastMeasure: 0,
+    lastMeasure,
   };
 }
