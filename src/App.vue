@@ -335,14 +335,15 @@ function onKeyDown(evt: KeyboardEvent): void {
       evt.preventDefault();
       player.NextNote();
       break;
-    // Arrow up/down: adjust playback speed
-    case 'ArrowUp':
+    // +/-: adjust playback speed
+    case '+':
+    case '=':
       evt.preventDefault();
       player.SpeedUp();
       speedPct.value = player.getSpeedPercent();
       if (currentFileHash && options.value) saveSettingsToStorage(currentFileHash, options.value, speedPct.value);
       break;
-    case 'ArrowDown':
+    case '-':
       evt.preventDefault();
       player.SpeedDown();
       speedPct.value = player.getSpeedPercent();
