@@ -24,6 +24,7 @@ const speedPct    = ref(100);
 const loadingAudio = ref(false);
 const showDrawer      = ref(false);
 const showFullSettings = ref(false);
+const currentMeasureIdx = ref(0);
 
 const sheetViewRef = ref<InstanceType<typeof SheetMusicView>  | null>(null);
 const pianoViewRef = ref<InstanceType<typeof PianoKeyboard>   | null>(null);
@@ -36,6 +37,7 @@ function startPolling() {
   pollHandle = setInterval(() => {
     playState.value = player.getPlayState();
     loadingAudio.value = player.isLoadingInstruments();
+    currentMeasureIdx.value = player.getCurrentMeasure();
   }, 200);
 }
 function stopPolling() {
@@ -313,6 +315,31 @@ const bassVisible   = computed(() => options.value?.tracks[1] ?? true);
 /** Last measure index for loop range clamping */
 const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
 
+// ---- loop helpers ----
+
+/** Update the player options and Vue options ref without rebuilding the sheet music.
+ *  Used for loop-bound changes that don't affect sheet rendering. */
+function applyOptionsWithoutRebuild(newOpts: MidiOptions): void {
+  options.value = newOpts;
+  player.setOptions(newOpts);
+  currentMeasureIdx.value = player.getCurrentMeasure();
+  if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
+}
+
+/** Set the loop start at the current playback position (keyboard shortcut S). */
+function setLoopStart(): void {
+  if (!options.value) return;
+  player.SetLoopStart();
+  applyOptionsWithoutRebuild({ ...options.value });
+}
+
+/** Set the loop end at the current playback position and enable loop (keyboard shortcut E). */
+function setLoopEnd(): void {
+  if (!options.value) return;
+  player.SetLoopEnd();
+  applyOptionsWithoutRebuild({ ...options.value, playMeasuresInLoop: true });
+}
+
 // ---- keyboard shortcuts ----
 function onKeyDown(evt: KeyboardEvent): void {
   if (!hasMidi()) return;
@@ -365,6 +392,16 @@ function onKeyDown(evt: KeyboardEvent): void {
     case 'Home':
       evt.preventDefault();
       replay();
+      break;
+    // S: set loop start at current position
+    case 's':
+    case 'S':
+      if (!evt.ctrlKey && !evt.metaKey) { evt.preventDefault(); setLoopStart(); }
+      break;
+    // E: set loop end at current position (also enables loop)
+    case 'e':
+    case 'E':
+      if (!evt.ctrlKey && !evt.metaKey) { evt.preventDefault(); setLoopEnd(); }
       break;
   }
 }
@@ -495,9 +532,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown));
       :visible="showDrawer"
       :options="options"
       :lastMeasure="lastMeasure"
+      :currentMeasure="currentMeasureIdx"
       @close="showDrawer = false"
       @openFullSettings="showDrawer = false; showFullSettings = true"
       @apply="onDrawerApply"
+      @setLoopAtStart="setLoopStart"
+      @setLoopAtEnd="setLoopEnd"
     />
 
     <!-- ---- Full settings page ---- -->
