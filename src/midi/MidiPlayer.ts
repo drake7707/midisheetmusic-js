@@ -71,6 +71,12 @@ export class MidiPlayer {
     this.piano = p;
   }
 
+  /** Update the options reference without triggering a full SetMidiFile reset.
+   *  Use this when only lightweight option fields (e.g. loop bounds) change. */
+  setOptions(opts: MidiOptions): void {
+    this.options = opts;
+  }
+
   SetMidiFile(file: MidiFile, opt: MidiOptions, s: SheetMusic): void {
     if (file === this.midifile && this.midifile !== null && this.playstate === PlayerState.Paused) {
       this.options = opt;

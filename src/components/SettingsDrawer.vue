@@ -21,12 +21,15 @@ const props = defineProps<{
   visible: boolean;
   options: MidiOptions;
   lastMeasure?: number;   // 0-based index of the last measure in the song
+  currentMeasure?: number; // 0-based index of the current playback position
 }>();
 
 const emit = defineEmits<{
   close: [];
   openFullSettings: [];
   apply: [opts: MidiOptions];
+  setLoopAtStart: [];
+  setLoopAtEnd: [];
 }>();
 
 function cloneOpts(o: MidiOptions): MidiOptions {
@@ -52,6 +55,14 @@ watch(() => props.visible, (v) => {
   }
 });
 
+// Re-sync local whenever options change externally (e.g. from keyboard S/E shortcuts)
+// while the drawer is open, so the displayed values stay accurate.
+watch(() => props.options, (newOpts) => {
+  if (props.visible) {
+    Object.assign(local, cloneOpts(newOpts));
+  }
+}, { deep: true });
+
 /** Emit an apply event whenever the user changes a switch/value. */
 function applyNow() {
   emit('apply', cloneOpts(local as MidiOptions));
@@ -60,21 +71,19 @@ function applyNow() {
 /** Last measure number (0-based) — used to clamp loop end. */
 const lastMeasure = () => props.lastMeasure ?? (props.options.lastMeasure ?? 0);
 
-/** Loop measure increment/decrement helpers */
-function decrementLoopStart() {
-  local.playMeasuresInLoopStart = Math.max(0, local.playMeasuresInLoopStart - 1);
+/** Loop start measure input handler (value is 1-based from the UI). */
+function setLoopStartInput(evt: Event) {
+  const v = parseInt((evt.target as HTMLInputElement).value, 10);
+  if (isNaN(v)) return;
+  local.playMeasuresInLoopStart = Math.max(0, Math.min(local.playMeasuresInLoopEnd, v - 1));
   applyNow();
 }
-function incrementLoopStart() {
-  local.playMeasuresInLoopStart = Math.min(local.playMeasuresInLoopEnd, local.playMeasuresInLoopStart + 1);
-  applyNow();
-}
-function decrementLoopEnd() {
-  local.playMeasuresInLoopEnd = Math.max(local.playMeasuresInLoopStart, local.playMeasuresInLoopEnd - 1);
-  applyNow();
-}
-function incrementLoopEnd() {
-  local.playMeasuresInLoopEnd = Math.min(lastMeasure(), local.playMeasuresInLoopEnd + 1);
+
+/** Loop end measure input handler (value is 1-based from the UI). */
+function setLoopEndInput(evt: Event) {
+  const v = parseInt((evt.target as HTMLInputElement).value, 10);
+  if (isNaN(v)) return;
+  local.playMeasuresInLoopEnd = Math.max(local.playMeasuresInLoopStart, Math.min(lastMeasure(), v - 1));
   applyNow();
 }
 
@@ -168,20 +177,32 @@ function incrementLoopEnd() {
           <!-- Loop Start -->
           <div class="loop-subitem-row">
             <span class="loop-subitem-label">Start Measure</span>
-            <div class="loop-badge-controls">
-              <button class="loop-badge-btn" @click="decrementLoopStart">−</button>
-              <span class="loop-badge">{{ local.playMeasuresInLoopStart + 1 }}</span>
-              <button class="loop-badge-btn" @click="incrementLoopStart">+</button>
+            <div class="loop-input-controls">
+              <input
+                type="number"
+                class="loop-measure-input"
+                :min="1"
+                :max="local.playMeasuresInLoopEnd + 1"
+                :value="local.playMeasuresInLoopStart + 1"
+                @change="setLoopStartInput"
+              />
+              <button class="loop-set-pos-btn" @click="$emit('setLoopAtStart')" title="Set loop start at current playback position (S)" aria-label="Set loop start at current playback position">Set at position</button>
             </div>
           </div>
 
           <!-- Loop End -->
           <div class="loop-subitem-row">
             <span class="loop-subitem-label">End Measure</span>
-            <div class="loop-badge-controls">
-              <button class="loop-badge-btn" @click="decrementLoopEnd">−</button>
-              <span class="loop-badge">{{ local.playMeasuresInLoopEnd + 1 }}</span>
-              <button class="loop-badge-btn" @click="incrementLoopEnd">+</button>
+            <div class="loop-input-controls">
+              <input
+                type="number"
+                class="loop-measure-input"
+                :min="local.playMeasuresInLoopStart + 1"
+                :max="lastMeasure() + 1"
+                :value="local.playMeasuresInLoopEnd + 1"
+                @change="setLoopEndInput"
+              />
+              <button class="loop-set-pos-btn" @click="$emit('setLoopAtEnd')" title="Set loop end at current playback position (E)" aria-label="Set loop end at current playback position">Set at position</button>
             </div>
           </div>
 
@@ -364,7 +385,7 @@ function incrementLoopEnd() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
+  padding: 8px 12px;
   cursor: default;
 }
 .loop-subitem-row:hover { background: rgba(0, 0, 0, 0.04); }
@@ -375,32 +396,38 @@ function incrementLoopEnd() {
   flex: 1;
 }
 
-.loop-badge-controls {
+.loop-input-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
-.loop-badge-btn {
-  width: 24px;
-  height: 24px;
-  background: #e0e0e0;
-  border: none;
+
+.loop-measure-input {
+  width: 60px;
+  padding: 3px 6px;
+  border: 1px solid #bdbdbd;
   border-radius: 4px;
   font-size: 14px;
-  cursor: pointer;
-  line-height: 1;
+  text-align: center;
+  color: #222;
+  background: #fafafa;
 }
-.loop-badge-btn:hover { background: #bdbdbd; }
-.loop-badge {
-  display: inline-block;
+.loop-measure-input:focus {
+  outline: none;
+  border-color: #3f51b5;
+}
+
+.loop-set-pos-btn {
+  padding: 3px 8px;
   background: #3f51b5;
   color: #fff;
+  border: none;
+  border-radius: 4px;
   font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 2px;
-  min-width: 28px;
-  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
 }
+.loop-set-pos-btn:hover { background: #303f9f; }
 
 /* ── Divider ──────────────────────────────────────────────────────────────── */
 .divider {
