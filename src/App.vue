@@ -318,12 +318,14 @@ const lastMeasure = computed(() => options.value?.lastMeasure ?? 0);
 // ---- loop helpers ----
 
 /** Update the player options and Vue options ref without rebuilding the sheet music.
- *  Used for loop-bound changes that don't affect sheet rendering. */
+ *  Used for loop-bound changes that don't require a full sheet rebuild. */
 function applyOptionsWithoutRebuild(newOpts: MidiOptions): void {
   options.value = newOpts;
   player.setOptions(newOpts);
+  sheet.value?.setOptions(newOpts);
   currentMeasureIdx.value = player.getCurrentMeasure();
   if (currentFileHash) saveSettingsToStorage(currentFileHash, newOpts, speedPct.value);
+  sheetViewRef.value?.drawSheet(player.getCurrentPulseTime());
 }
 
 /** Set the loop start at the current playback position (keyboard shortcut S). */

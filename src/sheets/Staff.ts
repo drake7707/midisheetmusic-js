@@ -90,6 +90,7 @@ export class Staff {
   getEndTime(): number { return this.endtime; }
   setEndTime(value: number): void { this.endtime = value; }
   setSwingLabel(label: string | null): void { this.swingLabel = label; }
+  setOptions(opts: MidiOptions): void { this.options = opts; }
 
   /** Return the canvas X position of the symbol at or just after `pulseTime`,
    *  matching the same logic used by ShadeNotes to place the shade highlight. */

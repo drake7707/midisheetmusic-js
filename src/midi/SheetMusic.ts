@@ -169,6 +169,12 @@ export class SheetMusic implements ISheetMusic {
   getStaffs():        Staff[]       { return this.staffs; }
   getTextColor():     number        { return rgb(70, 70, 70); }
 
+  /** Update the options reference on all staffs (e.g. when loop bounds change
+   *  without a full sheet rebuild). */
+  setOptions(opts: MidiOptions): void {
+    for (const staff of this.staffs) staff.setOptions(opts);
+  }
+
   static getTextColor(): number { return rgb(70, 70, 70); }
 
   NoteColor(number: number): number {
