@@ -1,6 +1,6 @@
 # MIDI Sheet Music JS
 
-A web-based MIDI sheet music viewer and player — a port of the [Android MidiSheetMusic app](https://github.com/drake7707/midisheetmusic).
+A web-based MIDI sheet music viewer and player — a port of the [Android MidiSheetMusic app]([https://github.com/drake7707/midisheetmusic](https://github.com/drakarah/MidiSheetMusic-Android)).
 
 Built with **Vue 3 + TypeScript + Vite**.
 
